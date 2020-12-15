@@ -43,6 +43,7 @@ public:
 
 public:
   void   initializeKmerTable(uint32 maxMemory);
+  void   initializeKmerTableChild(uint32 maxMemory);
 
   void   initializeOutput(void) {
     outputWriter = new compressedFileWriter(outputName);
@@ -101,6 +102,9 @@ public:
     if (_seqStore)
       delete _seqStore;
 
+    if (_seqMeryl)
+      delete _seqMeryl;
+
     for (uint32 ii=0; ii<_haps.size(); ii++)
       delete _haps[ii];
 
@@ -126,6 +130,7 @@ public:
   uint32                 _seqCounts; // read counts for current file
 
   vector<hapData *>      _haps;
+  hapData               *_seqMeryl; // for child dataset
 
   double                 _minRatio;
   uint32                 _minOutputLength;
@@ -254,9 +259,12 @@ public:
 
 
 hapData::hapData(char *merylname, char *histoname, char *fastaname) {
-  strncpy(merylName,  merylname, FILENAME_MAX);
-  strncpy(histoName,  histoname, FILENAME_MAX);
-  strncpy(outputName, fastaname, FILENAME_MAX);
+  if (merylname != NULL)
+    strncpy(merylName,  merylname, FILENAME_MAX);
+  if (histoname != NULL)
+    strncpy(histoName,  histoname, FILENAME_MAX);
+  if (fastaname != NULL)
+    strncpy(outputName, fastaname, FILENAME_MAX);
 
   lookup       = NULL;
   minCount     = 0;
@@ -385,9 +393,10 @@ getMinFreqFromHistogram(char *histoName) {
 
   delete [] histo;
 
+  fprintf(stdout, "Determined the minimum count threashold: %u\n",minFreq);
+
   return(minFreq);
 }
-
 
 
 
@@ -413,9 +422,46 @@ hapData::initializeKmerTable(uint32 maxMemory) {
   if (merylName[0]) {
     merylFileReader  *reader = new merylFileReader(merylName);
 
-    lookup = new merylExactLookup();
-    lookup->load(reader, maxMemory, true, false, minFreq, UINT32_MAX);
-    
+    lookup = new merylExactLookup(reader, maxMemory, minFreq, UINT32_MAX);
+
+    if (lookup->configure() == false) {
+      exit(1);
+    }
+
+    lookup->load();
+
+    nKmers = lookup->nKmers();
+
+    delete reader;
+  }
+
+  //  And report what we loaded.
+
+  fprintf(stderr, "--   loaded %lu kmers.\n", nKmers);
+};
+
+
+
+void
+hapData::initializeKmerTableChild(uint32 maxMemory) {
+  //  Construct an exact lookup table.
+  //
+  //  If there is not valid merylName, do not load data.  This is only useful
+  //  for testing getMinFreqFromHistogram() above.
+  //
+  //  Get this behavior with option '-H "" histo out.fasta',
+
+  if (merylName[0]) {
+    merylFileReader  *reader = new merylFileReader(merylName);
+
+    lookup = new merylExactLookup(reader, maxMemory, 1, UINT32_MAX);
+
+    if (lookup->configure() == false) {
+      exit(1);
+    }
+
+    lookup->load();
+
     nKmers = lookup->nKmers();
 
     delete reader;
@@ -466,7 +512,7 @@ allData::openOutputs(void) {
 //  Create meryl exact lookup structures for all the haplotypes.
 void
 allData::loadHaplotypeData(void) {
-  uint32 memPerHap = _maxMemory / _haps.size();
+  uint32 memPerHap = _maxMemory / (_haps.size() + 1);
 
   if (memPerHap == 0)   //  If zero, it would be allowed
     memPerHap = 1;      //  to use all available memory!
@@ -474,6 +520,8 @@ allData::loadHaplotypeData(void) {
   fprintf(stderr, "--\n");
   fprintf(stderr, "-- Loading haplotype data, using up to %u GB memory for each.\n", memPerHap);
   fprintf(stderr, "--\n");
+
+  _seqMeryl->initializeKmerTableChild(memPerHap);
 
   for (uint32 ii=0; ii<_haps.size(); ii++)
     _haps[ii]->initializeKmerTable(memPerHap);
@@ -589,8 +637,12 @@ processReadBatch(void *G, void *T, void *S) {
 
   //fprintf(stderr, "Proces readBatch s %p with %u/%u reads %p %p %p\n", s, s->_numReads, s->_maxReads, s->_names, s->_bases, s->_files);
 
-  uint32       nHaps   = g->_haps.size();
-  uint32      *matches = new uint32 [nHaps];
+  uint32       nHaps       = g->_haps.size();
+  uint32      *matches     = new uint32 [nHaps];
+  uint64      *hap_cnts = new uint64 [nHaps];
+
+  uint32       pos, flag;
+  uint64       read_cnt;
 
   for (uint32 ii=0; ii<s->_numReads; ii++) {
 
@@ -604,11 +656,28 @@ processReadBatch(void *G, void *T, void *S) {
     kmerIterator  kiter(s->_bases[ii].string(),
                         s->_bases[ii].length());
 
-    while (kiter.nextMer())
-      for (uint32 hh=0; hh<nHaps; hh++)
-        if ((g->_haps[hh]->lookup->value(kiter.fmer()) > 0) ||
-            (g->_haps[hh]->lookup->value(kiter.rmer()) > 0))
-          matches[hh]++;
+    pos = 0;
+    while (kiter.nextMer()) {
+      read_cnt = g->_seqMeryl->lookup->value(kiter.fmer());
+      if (read_cnt == 0)
+        read_cnt = g->_seqMeryl->lookup->value(kiter.rmer());
+      if (read_cnt <= 20)
+        continue;
+      flag = 0;
+      for (uint32 hh=0; hh<nHaps; hh++) {
+          hap_cnts[hh] = g->_haps[hh]->lookup->value(kiter.fmer());
+          if (hap_cnts[hh] < g->_haps[hh]->lookup->value(kiter.rmer()))
+            hap_cnts[hh] = g->_haps[hh]->lookup->value(kiter.rmer());
+          if (hap_cnts[hh] > 0) {
+            matches[hh]++;
+            flag = 1;
+          }
+      }
+      /*if (flag == 1)
+        fprintf(stdout, "read %u[%u]: %lu (child), %lu (hap1), %lu (hap2)\n",
+                        ii, pos, read_cnt, hap_cnts[0], hap_cnts[1]);*/
+      pos++;
+    }
 
     //  Find the haplotype with the most and second most matching kmers.
 
@@ -655,7 +724,7 @@ processReadBatch(void *G, void *T, void *S) {
     s->_files[ii] = UINT32_MAX;
 
     if (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-        ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio)))
+        ((sco2nd > DBL_MIN) && (matches[hap1st] >= 10) && (sco1st / sco2nd > g->_minRatio)))
       s->_files[ii] = hap1st;
   }
 
@@ -718,6 +787,9 @@ main(int argc, char **argv) {
       while ((arg < argc) && (fileExists(argv[arg+1])))
         G->_seqs.push(new dnaSeqFile(argv[++arg]));
 
+    } else if (strcmp(argv[arg], "-M") == 0) {   //  CHILD DATA SPECIFICATION
+      G->_seqMeryl = new hapData(argv[++arg], NULL, NULL);
+
     } else if (strcmp(argv[arg], "-H") == 0) {   //  HAPLOTYPE SPECIFICATION
       G->_haps.push_back(new hapData(argv[arg+1], argv[arg+2], argv[arg+3]));
       arg += 3;
@@ -754,6 +826,8 @@ main(int argc, char **argv) {
     err.push_back("No input sequences supplied with either (-S) or (-R).\n");
   if ((G->_seqName != NULL) && (G->_seqs.size() != 0))
     err.push_back("Only one type of input reads (-S or -R) supported.\n");
+  if (G->_seqMeryl == NULL)
+    err.push_back("No meryl data for input reads.\n");
   if (G->_haps.size() < 2)
     err.push_back("Not enough haplotypes (-H) supplied.\n");
 
