@@ -15,8 +15,9 @@ GB_MEMORY=100
 N_THREADS=20
 
 ## Parameters for the modified parts (see README.md for details)
-MIN_KMER_FREQ_IN_CHILD=0
-MIN_DIFF_MATCH_KMERS_BETWEEN_PARENT_HAPLOTYPES=1
+MIN_KMER_FREQ_IN_CHILD=20
+MIN_DIFF_MATCH_KMERS_BETWEEN_PARENT_HAPLOTYPES=3
+MIN_RATIO_MATCH_KMERS_BETWEEN_PARENT_HAPLOTYPES=2
 
 
 # Set up executables: canu, splitHaplotype, meryl
@@ -42,6 +43,7 @@ cd ${CANU_WORK_DIR}/haplotype
 
 splitHaplotype \
   -cl 1000 \
+  -cr ${MIN_RATIO_MATCH_KMERS_BETWEEN_PARENT_HAPLOTYPES} \
   -hf ${MIN_KMER_FREQ_IN_CHILD} \
   -hd ${MIN_DIFF_MATCH_KMERS_BETWEEN_PARENT_HAPLOTYPES} \
   -threads ${N_THREADS} \
@@ -54,6 +56,8 @@ splitHaplotype \
 > haplotype.log.WORKING \
 && \
 mv -f ./haplotype.log.WORKING ./haplotype.log
+
+touch haplotyping.success
 
 cd ../..
 
