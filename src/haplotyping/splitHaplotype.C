@@ -84,6 +84,9 @@ public:
     _minRatio         = 1.0;
     _minOutputLength  = 1000;
 
+    _minKmerFreq      = 20;
+    _minNmatchDiff    = 5;
+
     _ambiguousName   = NULL;
     _ambiguousWriter = NULL;
     _ambiguous       = NULL;
@@ -134,6 +137,9 @@ public:
 
   double                 _minRatio;
   uint32                 _minOutputLength;
+
+  uint32                 _minKmerFreq;
+  uint32                 _minNmatchDiff;
 
   char                  *_ambiguousName;
   compressedFileWriter  *_ambiguousWriter;
@@ -651,7 +657,7 @@ processReadBatch(void *G, void *T, void *S) {
       read_cnt = g->_seqMeryl->lookup->value(kiter.fmer());
       if (read_cnt == 0)
         read_cnt = g->_seqMeryl->lookup->value(kiter.rmer());
-      if (read_cnt <= 20)
+      if (read_cnt <= g->_minKmerFreq)
         continue;
       flag = 0;
       for (uint32 hh=0; hh<nHaps; hh++) {
@@ -714,7 +720,7 @@ processReadBatch(void *G, void *T, void *S) {
     s->_files[ii] = UINT32_MAX;
 
     if (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-        ((sco2nd > DBL_MIN) && (matches[hap1st] >= 10) && (sco1st / sco2nd > g->_minRatio)))
+        ((sco2nd > DBL_MIN) && (matches[hap1st] - matches[hap2nd] >= g->_minNmatchDiff) && (sco1st / sco2nd > g->_minRatio)))
       s->_files[ii] = hap1st;
   }
 
@@ -793,6 +799,12 @@ main(int argc, char **argv) {
     } else if (strcmp(argv[arg], "-cl") == 0) {
       G->_minOutputLength = strtouint32(argv[++arg]);
 
+    } else if (strcmp(argv[arg], "-hf") == 0) {
+      G->_minKmerFreq = strtouint32(argv[++arg]);
+
+    } else if (strcmp(argv[arg], "-hd") == 0) {
+      G->_minNmatchDiff = strtouint32(argv[++arg]);
+
     } else if (strcmp(argv[arg], "-threads") == 0) {
       G->_numThreads = strtouint32(argv[++arg]);
 
@@ -847,6 +859,11 @@ main(int argc, char **argv) {
     fprintf(stderr, "  Instead of a full histogram, a single integer can be supplied to directly\n");
     fprintf(stderr, "  set the threshold.\n");
     fprintf(stderr, "\n");
+    fprintf(stderr, "CHILD MERYL INPUT\n");
+    fprintf(stderr, "  Used for ignoring low-frequency k-mers for k-mer matching between child and parents.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -M child-kmers.meryl\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "OUTPUTS:\n");
     fprintf(stderr, "  Haplotype-specific reads are written to 'haplo.fasta.gz' as specified in each -H\n");
     fprintf(stderr, "  option.  Reads not assigned to any haplotype are written to the file specified\n");
@@ -859,6 +876,9 @@ main(int argc, char **argv) {
     fprintf(stderr, "PARAMETERS\n");
     fprintf(stderr, "  -cr ratio        minimum ratio between best and second best to classify\n");
     fprintf(stderr, "  -cl length       minimum length of output read\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -hf number       minimum frequency (in the child dataset) of a k-mer used for k-mer matching\n");
+    fprintf(stderr, "  -hd number       minimum difference of the number of matched k-mers between two haplotypes for each read\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v               report how many batches per second are being processed\n");
     fprintf(stderr, "\n");
