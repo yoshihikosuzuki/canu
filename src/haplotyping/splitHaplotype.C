@@ -657,7 +657,7 @@ processReadBatch(void *G, void *T, void *S) {
       read_cnt = g->_seqMeryl->lookup->value(kiter.fmer());
       if (read_cnt == 0)
         read_cnt = g->_seqMeryl->lookup->value(kiter.rmer());
-      if (read_cnt <= g->_minKmerFreq)
+      if (read_cnt < g->_minKmerFreq)
         continue;
       flag = 0;
       for (uint32 hh=0; hh<nHaps; hh++) {
@@ -669,9 +669,9 @@ processReadBatch(void *G, void *T, void *S) {
             flag = 1;
           }
       }
-      /*if (flag == 1)
+      if (0 && flag == 1)
         fprintf(stdout, "read %u[%u]: %lu (child), %lu (hap1), %lu (hap2)\n",
-                        ii, pos, read_cnt, hap_cnts[0], hap_cnts[1]);*/
+                        ii, pos, read_cnt, hap_cnts[0], hap_cnts[1]);
       pos++;
     }
 
@@ -719,8 +719,9 @@ processReadBatch(void *G, void *T, void *S) {
 
     s->_files[ii] = UINT32_MAX;
 
-    if (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-        ((sco2nd > DBL_MIN) && (matches[hap1st] - matches[hap2nd] >= g->_minNmatchDiff) && (sco1st / sco2nd > g->_minRatio)))
+    if ( (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
+          ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio)))
+				 && (matches[hap1st] - matches[hap2nd] >= g->_minNmatchDiff) )
       s->_files[ii] = hap1st;
   }
 
