@@ -9,7 +9,7 @@ PREFIX_PARENT1=K12
 PREFIX_PARENT2=O157
 
 CANU_WORK_DIR=ecoliTrio
-CANU_COMMAND="canu -p asm -d ${CANU_WORK_DIR} useGrid=false genomeSize=5m -haplotype${PREFIX_PARENT1} ${IN_PARENT1} -haplotype${PREFIX_PARENT2} ${IN_PARENT1} -pacbio ${IN_CHILD}"
+CANU_COMMAND="canu -p asm -d ${CANU_WORK_DIR} useGrid=false genomeSize=5m -haplotype${PREFIX_PARENT1} ${IN_PARENT1} -haplotype${PREFIX_PARENT2} ${IN_PARENT2} -pacbio ${IN_CHILD}"
 
 GB_MEMORY=100
 N_THREADS=20
