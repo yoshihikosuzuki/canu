@@ -38,7 +38,7 @@ using namespace std;
 
 class hapData {
 public:
-  hapData(char *merylname, char *histoname, char *fastaname);
+  hapData(char *merylname, char *histoname, char *fastaname, int minKmerMult);
   ~hapData();
 
 public:
@@ -264,7 +264,7 @@ public:
 
 
 
-hapData::hapData(char *merylname, char *histoname, char *fastaname) {
+hapData::hapData(char *merylname, char *histoname, char *fastaname, int minKmerMult) {
   if (merylname != NULL)
     strncpy(merylName,  merylname, FILENAME_MAX);
   if (histoname != NULL)
@@ -273,7 +273,7 @@ hapData::hapData(char *merylname, char *histoname, char *fastaname) {
     strncpy(outputName, fastaname, FILENAME_MAX);
 
   lookup       = NULL;
-  minCount     = 0;
+  minCount     = minKmerMult;
   maxCount     = UINT32_MAX;
   nKmers       = 0;
 
@@ -413,10 +413,10 @@ hapData::initializeKmerTable(uint32 maxMemory) {
 
   //  Decide on a threshold below which we consider the kmers as useless noise.
 
-  uint32 minFreq = getMinFreqFromHistogram(histoName);
+  //uint32 minFreq = getMinFreqFromHistogram(histoName);
 
-  fprintf(stdout, "--  Haplotype '%s':\n", merylName);
-  fprintf(stdout, "--   use kmers with frequency at least %u.\n", minFreq);
+  fprintf(stderr, "--  Haplotype '%s':\n", merylName);
+  fprintf(stderr, "--   use kmers with frequency at least %u.\n", minCount);
 
   //  Construct an exact lookup table.
   //
@@ -429,7 +429,7 @@ hapData::initializeKmerTable(uint32 maxMemory) {
     merylFileReader  *reader = new merylFileReader(merylName);
 
     lookup = new merylExactLookup();
-    lookup->load(reader, maxMemory, true, false, minFreq, UINT32_MAX);
+    lookup->load(reader, maxMemory, true, false, minCount, UINT32_MAX);
 
     nKmers = lookup->nKmers();
 
@@ -785,16 +785,16 @@ main(int argc, char **argv) {
         G->_seqs.push(new dnaSeqFile(argv[++arg]));
 
     } else if (strcmp(argv[arg], "-M") == 0) {   //  CHILD DATA SPECIFICATION
-      G->_seqMeryl = new hapData(argv[++arg], NULL, NULL);
+      G->_seqMeryl = new hapData(argv[++arg], NULL, NULL, 1);
 
     } else if (strcmp(argv[arg], "-H") == 0) {   //  HAPLOTYPE SPECIFICATION
-      G->_haps.push_back(new hapData(argv[arg+1], argv[arg+2], argv[arg+3]));
-      arg += 3;
+      G->_haps.push_back(new hapData(argv[arg+1], argv[arg+2], argv[arg+3], strtodouble(argv[arg+4])));
+      arg += 4;
 
     } else if (strcmp(argv[arg], "-A") == 0) {
       G->_ambiguousName = argv[++arg];
 
-    } else if (strcmp(argv[arg], "-cr") == 0) {  //  PARAMETERS
+    } else if (strcmp(argv[arg], "-cr") == 0) {
       G->_minRatio = strtodouble(argv[++arg]);
 
     } else if (strcmp(argv[arg], "-cl") == 0) {
@@ -853,7 +853,7 @@ main(int argc, char **argv) {
     fprintf(stderr, "    parent-kmers.histogram  - a histogram of all parent kmers.\n");
     fprintf(stderr, "    haplo-output.fasta.gz   - output reads assigned to this haplotype.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -H haplo-kmers.meryl parent-kmers.histogram haplo-output.fasta.gz\n");
+    fprintf(stderr, "  -H haplo-kmers.meryl parent-kmers.histogram haplo-output.fasta.gz minKmerMultiplicity\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  The 'parent-kmers.histgram' is used to determine a noise threshold.  kmers\n");
     fprintf(stderr, "  that occur fewer than that many times are ignored as being likely noise kmers.\n");
