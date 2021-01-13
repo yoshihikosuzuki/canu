@@ -662,13 +662,13 @@ processReadBatch(void *G, void *T, void *S) {
 
     //  Find the haplotype with the most and second most matching kmers.
 
-    uint32  hap1st = UINT32_MAX;   //  Index of the best haplotype.
-    double  sco1st = 0.0;          //  Score of the best haplotype.
+    //uint32  hap1st = UINT32_MAX;   //  Index of the best haplotype.
+    //double  sco1st = 0.0;          //  Score of the best haplotype.
 
-    uint32  hap2nd = UINT32_MAX;   //  Index of the second best haplotype.
-    double  sco2nd = 0.0;          //  Score of the second best haplotype.
+    //uint32  hap2nd = UINT32_MAX;   //  Index of the second best haplotype.
+    //double  sco2nd = 0.0;          //  Score of the second best haplotype.
 
-    for (uint32 hh=0; hh<nHaps; hh++) {
+    /*for (uint32 hh=0; hh<nHaps; hh++) {
       double  sco = (double)matches[hh] / g->_haps[hh]->nKmers;
 
       if      (sco1st <= sco) {
@@ -680,7 +680,7 @@ processReadBatch(void *G, void *T, void *S) {
       }
 
       assert(sco2nd <= sco1st);
-    }
+    }*/
 
     //  Write the read to the 'best' haplotype, unless it's an ambiguous assignment.
     //
@@ -690,15 +690,13 @@ processReadBatch(void *G, void *T, void *S) {
     //   - there is a non-zero best score and the second best is zero
     //   - the ratio of best to second best is bigger than some threshold
 
-    fprintf(stdout, "Read %d (%d bp): hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> ",
-            ii+1, s->_bases[ii].length(),
-            hap1st, sco1st, matches[hap1st],
-            hap2nd, sco2nd, matches[hap2nd]);
+    fprintf(stdout, "Read %d (%d bp): %6u matches vs %6u matches -> ",
+            ii+1, s->_bases[ii].length(), matches[0], matches[1]);
 
     s->_files[ii] = UINT32_MAX;
-    if ( (matches[hap1st] >= matches[hap2nd] + g->_minNmatchDiff)
-         && (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-             ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio))) ) {
+    uint32 hap1st = (matches[0] >= matches[1]) ? 0 : 1;
+    uint32 hap2nd = 1 - hap1st;
+    if (matches[hap1st] >= matches[hap2nd] + g->_minNmatchDiff) {
       s->_files[ii] = hap1st;
       fprintf(stdout, "%1u\n", hap1st);
     } else {
