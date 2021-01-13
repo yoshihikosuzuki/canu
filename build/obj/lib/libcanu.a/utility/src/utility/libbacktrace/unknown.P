@@ -1,0 +1,5 @@
+/hpcshare/appsunit/MyersU/yoshihiko-suzuki/develop/canu-2.1.1/build/obj/lib/libcanu.a/utility/src/utility/libbacktrace/unknown.o: \
+ utility/src/utility/libbacktrace/unknown.c /usr/include/stdc-predef.h \
+ utility/src/utility/libbacktrace/config.h
+ utility/src/utility/libbacktrace/unknown.c /usr/include/stdc-predef.h :
+ utility/src/utility/libbacktrace/config.h :
