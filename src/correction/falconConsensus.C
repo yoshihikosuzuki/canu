@@ -100,7 +100,7 @@ falconConsensus::getConsensus(uint32         tagsLen,                //  Number 
       // Assume t_pos was set on earlier iteration.
       // (Otherwise, use its initial value, which might be an error. ~cd)
 
-      assert(tag->delta < uint16max);
+      assert(tag->delta < uint16MAX);
 
       msa[t_pos]->increaseDeltaGroup(tag->delta);
 

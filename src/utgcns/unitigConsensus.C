@@ -19,18 +19,17 @@
 
 #include "bits.H"
 
+// for pbdagcon
 #include "Alignment.H"
 #include "AlnGraphBoost.H"
 #include "edlib.H"
-#include "align-parasail-driver.H"
+#include "align-ssw.H"
+#include "align-ssw-driver.H"
 
 #include <set>
 
 using namespace std;
 
-#define ERROR_RATE_FACTOR 4
-#define NUM_BANDS         2
-#define MAX_RETRIES       ERROR_RATE_FACTOR * NUM_BANDS
 
 abSequence::abSequence(uint32  readID,
                        uint32  length,
@@ -223,10 +222,8 @@ void unitigConsensus::switchToUncompressedCoordinates(void) {
     uint32* ntoc              = NULL;
 
     for (uint32 child = 0; child < _numReads; child++) {
-
       if (compressedOffset > _utgpos[child].min())
-        fprintf(stderr, "switchToUncompressedCoordinates()-- ERROR1 in gap in positioning, last read ends at %d; next read starts at %d\n",
-                compressedOffset, _utgpos[child].min());
+         fprintf(stderr, "switchToUncompressedCoordinates()-- Error: there is a gap in positioning, the last read I have ended at %d and the next starts at %d\n", compressedOffset, _utgpos[child].min());
       assert(_utgpos[child].min() >= compressedOffset);
 
       uint32 readCompressedPosition = _utgpos[child].min() - compressedOffset;
@@ -238,13 +235,12 @@ void unitigConsensus::switchToUncompressedCoordinates(void) {
       while (i < nlen && (ntoc[i] < readCompressedPosition))
          i++;
 
-      //if (showAlgorithm())
-      //  fprintf(stderr, "switchToUncompressedCoordinates()-- I'm trying to find start of child %d compressed %d (dist from guide read is %d and in uncompressed in becomes %d)\n", _utgpos[child].ident(), _utgpos[child].min(), readCompressedPosition, i);
+      if (showAlgorithm())
+          fprintf(stderr, "switchToUncompressedCoordinates()-- I'm trying to find start of child %d compressed %d (dist from guide read is %d and in uncompressed in becomes %d)\n", _utgpos[child].ident(), _utgpos[child].min(), readCompressedPosition, i);
 
       _utgpos[child].setMinMax(i+uncompressedOffset, i+uncompressedOffset+getSequence(child)->length());
-
-      //if (showAlgorithm())
-      //  fprintf(stderr, "switchToUncompressedCoordinates() --Updated read %d which has length %d to be from %d - %d\n", _utgpos[child].ident(), getSequence(child)->length(), _utgpos[child].min(), _utgpos[child].max());
+      if (showAlgorithm())
+           fprintf(stderr, "switchToUncompressedCoordinates() --Updated read %d which has length %d to be from %d - %d\n", _utgpos[child].ident(), getSequence(child)->length(), _utgpos[child].min(), _utgpos[child].max());
 
        // update best end if needed
        if (ntoc == NULL || compressedEnd > currentEnd) {
@@ -257,8 +253,8 @@ void unitigConsensus::switchToUncompressedCoordinates(void) {
           compressedOffset   = compressedStart;
           uncompressedOffset = _utgpos[child].min();
 
-          //if (showAlgorithm())
-          //  fprintf(stderr, "switchToUncompressedCoordinates()-- Updating guide read to be %d which ends at %d. Best before ended at %d. Now my guide is at %d (%d uncompressed)\n", _utgpos[child].ident(), compressedEnd, currentEnd, compressedOffset, uncompressedOffset);
+          if (showAlgorithm())
+             fprintf(stderr, "switchToUncompressedCoordinates()-- Updating guide read to be %d which ends at %d. Best before ended at %d. Now my guide is at %d (%d uncompressed)\n", _utgpos[child].ident(), compressedEnd, currentEnd, compressedOffset, uncompressedOffset);
        }
 
       if (_utgpos[child].max() > layoutLen)
@@ -266,44 +262,6 @@ void unitigConsensus::switchToUncompressedCoordinates(void) {
     }
     delete[] ntoc;
     _tig->_layoutLen = layoutLen;
-}
-
-
-// we assume some reads have good positions (recorded in cnspos) but most do
-// not use those reads with good positions as anchors to re-compute everyone
-// else's positions too this is very similar to the strategy in the above
-// function to convert between compressed and uncompressed coordinates and it
-// would be nice to unify the logic
-//
-void unitigConsensus::updateReadPositions(void) {
-  uint32 newOffset = 0;
-  uint32 oldOffset = 0;
-
-  for (uint32 child = 0; child < _numReads; child++) {
-    if (oldOffset > _utgpos[child].min())
-      fprintf(stderr, "switchToUncompressedCoordinates()-- ERROR1 in gap in positioning, last read ends at %d; next read starts at %d\n",
-              oldOffset, _utgpos[child].min());
-    assert(_utgpos[child].min() >= oldOffset);
-
-    // update best end if needed
-    if (_cnspos[child].max() != 0) {
-      newOffset = _cnspos[child].min();
-      oldOffset = _utgpos[child].min();
-
-      //if (showAlgorithm())
-      // fprintf(stderr, "updatePostTemplate()-- Updating guide read to be %d which ends at %d. Now my guide originally was at %d now is at %d\n", _utgpos[child].ident(), _utgpos[child].max(), oldOffset, newOffset);
-    }
-
-    uint32 readPosition = _utgpos[child].min() - oldOffset;
-
-    //if (showAlgorithm())
-    //  fprintf(stderr, "updatePostTemplate()-- I'm trying to find start of child %d (dist from guide read is %d) currently from %d-%d\n", _utgpos[child].ident(), readPosition, _utgpos[child].min(), _utgpos[child].max());
-
-    _utgpos[child].setMinMax(readPosition+newOffset, readPosition+newOffset+getSequence(child)->length());
-
-    //if (showAlgorithm())
-    //  fprintf(stderr, "updatePostTemplate() --Updated read %d which has length %d to be from %d - %d\n", _utgpos[child].ident(), getSequence(child)->length(), _utgpos[child].min(), _utgpos[child].max());
-  }
 }
 
 char *
@@ -425,7 +383,7 @@ unitigConsensus::generateTemplateStitch(void) {
 
     double           templateSize  = 0.90;
     double           extensionSize = 0.10;
-    double           bandErrRate   = _errorRate / ERROR_RATE_FACTOR;
+    double           bandErrRate   = _errorRate / 4;
 
     int32            olapLen       = ePos - _utgpos[nr].min();  //  The expected size of the overlap
 
@@ -486,12 +444,10 @@ unitigConsensus::generateTemplateStitch(void) {
     bool   hitTheEnd     = (gotResult) && (result.endLocations[0] + 1 == readEnd - readBgn);
     bool   moreToExtend  = (readEnd < readLen);
 
-
-    int32 maxDifference = min(2500, (int32)ceil(0.30*olapLen));
-    //  Reset if the edit distance is waay more than our error rate allows or it's very short and we haven't topped out on error.  This seems to be a quirk with
+    //  Reset if the edit distance is waay more than our error rate allows.  This seems to be a quirk with
     //  edlib when aligning to N's - I got startLocation = endLocation = 0 and editDistance = alignmentLength.
-    if ((double)result.editDistance / result.alignmentLength > bandErrRate || 
-        (abs(olapLen-result.alignmentLength) > maxDifference && bandErrRate < _errorRate)) {
+
+    if ((double)result.editDistance / result.alignmentLength > _errorRate) {
       noResult    = true;
       gotResult   = false;
       hitTheStart = false;
@@ -523,11 +479,11 @@ unitigConsensus::generateTemplateStitch(void) {
       fprintf(stderr, "generateTemplateStitch()-- FAILED to align - no result\n");
 
     if ((showAlgorithm()) && (noResult == false))
-      fprintf(stderr, "generateTemplateStitch()-- FOUND alignment at %d-%d editDist %d alignLen %d %.f%% expected %d\n",
+      fprintf(stderr, "generateTemplateStitch()-- FOUND alignment at %d-%d editDist %d alignLen %d %.f%%\n",
               result.startLocations[0], result.endLocations[0]+1,
               result.editDistance,
               result.alignmentLength,
-              100.0 * result.editDistance / result.alignmentLength, olapLen);
+              100.0 * result.editDistance / result.alignmentLength);
 
     if ((noResult) || (hitTheStart)) {
       if (showAlgorithm())
@@ -548,15 +504,15 @@ unitigConsensus::generateTemplateStitch(void) {
     if (templateSize < 0.01) {
       if (showAlgorithm())
         fprintf(stderr, "generateTemplateStitch()-- FAILED to align - no more template to remove!  Fail!\n");
-      if (bandErrRate + _errorRate / ERROR_RATE_FACTOR > _errorRate)
+      if (bandErrRate + _errorRate / 4 >= _errorRate)
          tryAgain = false;
       else {
         if (showAlgorithm()) 
-          fprintf(stderr, "generateTemplateStitch()-- FAILED to align at %.2f error rate, increasing to %.2f\n", bandErrRate, bandErrRate + _errorRate/ERROR_RATE_FACTOR);
+          fprintf(stderr, "generateTemplateStitch()-- FAILED to align at %.2f error rate, increasing to %.2f\n", bandErrRate, bandErrRate + _errorRate/4);
         tryAgain = true;
         templateSize  = 0.90;
         extensionSize = 0.10;
-        bandErrRate  += _errorRate / ERROR_RATE_FACTOR;
+        bandErrRate  += _errorRate / 4;
       }
     }
 
@@ -572,14 +528,10 @@ unitigConsensus::generateTemplateStitch(void) {
       readBgn = result.startLocations[0];     //  Expected to be zero
       readEnd = result.endLocations[0] + 1;   //  Where we need to start copying the read
 
-      // record updated read coordinates which we will use later as anchors to re-computed everyone else
-      _cnspos[nr].setMinMax(tiglen-readEnd, tiglen + readLen - readEnd);
-
       if (showAlgorithm()) {
         fprintf(stderr, "generateTemplateStitch()--\n");
         fprintf(stderr, "generateTemplateStitch()-- Aligned template %d-%d to read %u %d-%d; copy read %d-%d to template.\n",
                 tiglen - templateLen, tiglen, nr, readBgn, readEnd, readEnd, readLen);
-        fprintf(stderr, "generateTemplateStitch()-- New position for read %d is  %d-%d\n", _utgpos[nr].ident(), _cnspos[nr].min(), _cnspos[nr].max());
       }
     } else {
       readBgn = 0;
@@ -633,13 +585,11 @@ unitigConsensus::generateTemplateStitch(void) {
             tiglen, ePos, pd);
   }
 
-  updateReadPositions();
-
   return(tigseq);
 }
 
 
- 
+
 bool
 alignEdLib(dagAlignment      &aln,
            tgPosition        &utgpos,
@@ -647,23 +597,31 @@ alignEdLib(dagAlignment      &aln,
            uint32             fragmentLength,
            char              *tigseq,
            uint32             tiglen,
+           double             lengthScale,
            double             errorRate,
            bool               verbose) {
 
   EdlibAlignResult align;
 
-  int32   padding        = min(250, (int32)ceil(fragmentLength * 0.05));
-  double  bandErrRate    = errorRate / ERROR_RATE_FACTOR;
+  int32   padding        = (int32)ceil(fragmentLength * 0.15);
+  double  bandErrRate    = errorRate / 2;
   bool    aligned        = false;
   double  alignedErrRate = 0.0;
 
   //  Decide on where to align this read.
 
-  int32  tigbgn = max((int32)0,      (int32)floor(utgpos.min() - padding));
-  int32  tigend = min((int32)tiglen, (int32)floor(utgpos.max() + padding));
+  //  But, the utgpos positions are largely bogus, especially at the end of the tig.  utgcns (the
+  //  original) used to track positions of previously placed reads, find an overlap beterrn this
+  //  read and the last read, and use that info to find the coordinates for the new read.  That was
+  //  very complicated.  Here, we just linearly scale.
+
+  int32  tigbgn = max((int32)0,      (int32)floor(lengthScale * utgpos.min() - padding));
+  int32  tigend = min((int32)tiglen, (int32)floor(lengthScale * utgpos.max() + padding));
 
   if (verbose)
     fprintf(stderr, "alignEdLib()-- align read %7u eRate %.4f at %9d-%-9d", utgpos.ident(), bandErrRate, tigbgn, tigend);
+
+  //  This occurs if we don't lengthScale the positions.
 
   if (tigend < tigbgn) {
     fprintf(stderr, "alignEdLib()-- WARNING: tigbgn %d > tigend %d - tiglen %d utgpos %d-%d padding %d\n",
@@ -684,7 +642,7 @@ alignEdLib(dagAlignment      &aln,
 
   if (align.alignmentLength > 0) {
     alignedErrRate = (double)align.editDistance / align.alignmentLength;
-    aligned        = (alignedErrRate <= bandErrRate);
+    aligned        = (alignedErrRate <= errorRate);
     if (verbose)
       fprintf(stderr, " - ALIGNED %.4f at %9d-%-9d\n", alignedErrRate, tigbgn + align.startLocations[0], tigbgn + align.endLocations[0]+1);
   } else {
@@ -692,33 +650,18 @@ alignEdLib(dagAlignment      &aln,
       fprintf(stderr, "\n");
   }
 
-  for (uint32 ii=1 /*the 0ths was above*/; ((ii < MAX_RETRIES) && (aligned == false)); ii++) {
-    tigbgn = max((int32)0,      tigbgn - 5 * padding);
-    tigend = min((int32)tiglen, tigend + 5 * padding);
+  uint32 MAX_RETRIES=5;
+
+  for (uint32 ii=0; ((ii < MAX_RETRIES) && (aligned == false)); ii++) {
+    tigbgn = max((int32)0,      tigbgn - 3 * padding);
+    tigend = min((int32)tiglen, tigend + 3 * padding);
     // last attempt make a very wide band
-    if ((ii+1) % NUM_BANDS == 0) {
-       tigbgn = max((int32)0,      tigbgn - 25 * padding);
-       tigend = min((int32)tiglen, tigend + 25 * padding);
+    if (ii == (MAX_RETRIES - 1)) {
+       tigbgn = max((int32)0,      tigbgn - 20 * padding);
+       tigend = min((int32)tiglen, tigend + 20 * padding);
     }
 
-    // let the band increase without increasing error rate for a while, if we give up increase error rate
-    // and reset bnad
-    if (ii != 0 && ii % NUM_BANDS == 0) {
-       bandErrRate += errorRate / ERROR_RATE_FACTOR;
-       tigbgn = max((int32)0,      (int32)floor(utgpos.min() - padding));
-       tigend = min((int32)tiglen, (int32)floor(utgpos.max() + padding));
-    }
-
-    if (tigend < tigbgn) {
-       fprintf(stderr, "alignEdLib()-- WARNING: tigbgn %d > tigend %d - tiglen %d utgpos %d-%d padding %d\n",
-               tigbgn, tigend, tiglen, utgpos.min(), utgpos.max(), padding);
-       // try to align it to full
-       tigbgn = 0;
-       tigend = utgpos.max();
-       fprintf(stderr, "alignEdLib()-- WARNING: updated tigbgn %d > tigend %d - tiglen %d utgpos %d-%d padding %d\n",
-               tigbgn, tigend, tiglen, utgpos.min(), utgpos.max(), padding);
-    }
-    assert(tigend > tigbgn);
+    bandErrRate += errorRate / 2;
 
     edlibFreeAlignResult(align);
 
@@ -731,7 +674,7 @@ alignEdLib(dagAlignment      &aln,
 
     if (align.alignmentLength > 0) {
       alignedErrRate = (double)align.editDistance / align.alignmentLength;
-      aligned        = (alignedErrRate <= bandErrRate);
+      aligned        = (alignedErrRate <= errorRate);
       if (verbose)
         fprintf(stderr, " - ALIGNED %.4f at %9d-%-9d\n", alignedErrRate, tigbgn + align.startLocations[0], tigbgn + align.endLocations[0]+1);
     } else {
@@ -867,6 +810,7 @@ unitigConsensus::generatePBDAG(tgTig                     *tig_,
                          _utgpos[ii],
                          seq->getBases(), seq->length(),
                          tigseq, tiglen,
+                         (double)tiglen / _tig->_layoutLen,
                          _errorRate,
                          showAlgorithm());
 
@@ -1284,7 +1228,7 @@ unitigConsensus::findCoordinates(void) {
       _tig->getChild(ii)->setMinMax(abgn, aend);
 
       if (showPlacement())
-        fprintf(stderr, "  SUCCESS aligned to %d %d at %f\n", abgn, aend, 100.0 * align.editDistance / align.alignmentLength);
+        fprintf(stderr, "  SUCCESS aligned to %d %d\n", abgn, aend);
 
 #pragma omp critical (tgTigLoadAlign)
       {
@@ -1333,10 +1277,8 @@ unitigConsensus::trimCircular(void) {
   if (_tig->_circularLength == 0)
     return;
 
-  if (showAlgorithm()) {
-    fprintf(stderr, "\n");
+  if (showAlgorithm())
     fprintf(stderr, "Circularizing tig %u with expected overlap %u bases.\n", _tig->tigID(), _tig->_circularLength);
-  }
 
   //  Try alignments of various lengths until we find a proper overlap
   //  between the end and the start at acceptable quality, or until we get
@@ -1349,8 +1291,8 @@ unitigConsensus::trimCircular(void) {
   //            B:           ----------------......
   //   beginning of the tig -^        ^- endB
 
-  bool          found = false;
-  parasailLib   align(1, -4, 5, 3);
+  bool     found = false;
+  sswLib   align(1, -4, -5, -5);
 
   for (double scale = 1.05; (found == false) && (scale < 2.10); scale += 0.1) {
     uint32 trylen = min(length, (uint32)(_tig->_circularLength * scale));
@@ -1360,18 +1302,13 @@ unitigConsensus::trimCircular(void) {
               length-trylen, length,
               0, trylen);
 
-    align.alignDovetail(bases, length, length-trylen, length,           //  A:  the end of the tig
-                        bases, length, 0,             trylen, false);   //  B:  the start of the tig
+    align.align(bases, length, length-trylen, length,           //  A:  the end of the tig
+                bases, length, 0,             trylen, false);   //  B:  the start of the tig
 
-    if ((align.errorRate() < 0.05) &&                //  "Found" if the error rate is reasonable, and
-        (align.alignmentLength() >= _minOverlap) &&  //  and length is reasonable
-        (align.bgnA() > length - trylen) &&          //  A has unaligned stuff at the start, and
-        (align.endB() < trylen))                     //  B has unaligned stuff at the end.
+    if ((align.errorRate() < 0.05) &&         //  "Found" if the error rate is reasonable, and
+        (align.bgnA() > length - trylen) &&   //  A has unaligned stuff at the start, and
+        (align.endB() < trylen))              //  B has unaligned stuff at the end.
       found = true;
-
-    if ((found == false) && (showPlacement()))
-      fprintf(stderr, "  Aligned A %6u-%6u against B %6u-%6u at %7.3f%%\n",
-              align.bgnA(), align.endA(), align.bgnB(), align.endB(), align.percentIdentity());
   }
 
   if (found == false)   //  No overlap found, probably not circular.
@@ -1387,7 +1324,7 @@ unitigConsensus::trimCircular(void) {
   uint32   keepEnd = tailBgn;        //  end part off.
 
   if (showAlgorithm())
-    fprintf(stderr, "  Aligned A %6u-%6u against B %6u-%6u at %7.3f%%\n",
+    fprintf(stderr, "  Aligned A %6u-%6u against B %6u-%6u at %.2f%%\n",
             tailBgn, tailEnd, headBgn, headEnd, align.percentIdentity());
 
   if (showAlignments())
@@ -1424,63 +1361,42 @@ unitigConsensus::trimCircular(void) {
   bool  headTest = false;
   bool  tailTest = false;
 
-  //  Align trimmed-off start to end of tig.  EDLIB_MODE_HW allows free gaps
-  //  at the start/end of the second sequence.
+  //  Align trimmed-off start to end of tig.
   {
-    int32  aBgn = 0;
-    int32  aEnd = keepBgn;
-    int32  aLen = aEnd - aBgn;
-
-    int32  bBgn = (tailBgn >= 222) ? (tailBgn - 222) : (0);
-    int32  bEnd = tailEnd;
-    int32  bLen = bEnd - bBgn;
+    sswLib testBgn;
 
     if (showAlgorithm())
-      fprintf(stderr, "  Test   trimmed head %6d-%6d against   kept tail %6d-%6d\n",
-              aBgn, aEnd, bBgn, bEnd);
+      fprintf(stderr, "  Test   head %6d-%6d against   tail %6d-%6d\n",
+              0, keepBgn, tailBgn-222, tailEnd);
 
-    EdlibAlignResult  result;
-    result = edlibAlign(bases + aBgn, aLen,   //  Piece of the start we trim off
-                        bases + bBgn, bLen,   //  Should align into the tail we keep
-                        edlibNewAlignConfig(0.5 * aLen, EDLIB_MODE_HW, EDLIB_TASK_PATH));
+    testBgn.align(bases, length, 0,             keepBgn,
+                  bases, length, tailBgn - 222, tailEnd);
 
-    if (bBgn + result.endLocations[0] + 1 == keepEnd)
+    if (showAlgorithm())
+      fprintf(stderr, "  Tested head %6d-%6d aligns to tail %6d-%6d\n",
+              testBgn.bgnA(), testBgn.endA(), testBgn.bgnB(), testBgn.endB());
+
+    if (testBgn.endB() == keepEnd)
       headTest = true;
-
-    if ((headTest == false) && (showAlgorithm()))
-      fprintf(stderr, "  Tested trimmed head %6d-%6d aligns to kept tail %6d-%6d%s\n",
-              aBgn, aEnd, bBgn + result.startLocations[0], bBgn + result.endLocations[0] + 1, (headTest) ? "" : " - FAIL");
-
-    edlibFreeAlignResult(result);
   }
 
   //  Align trimmed-off end to start of tig.
   {
-    int32  aBgn = keepEnd;
-    int32  aEnd = length;
-    int32  aLen = aEnd - aBgn;
-
-    int32  bBgn = headBgn;
-    int32  bEnd = (headEnd + 222 <= length) ? (headEnd + 222) : (length);
-    int32  bLen = bEnd - bBgn;
+    sswLib testEnd;
 
     if (showAlgorithm())
-      fprintf(stderr, "  Test   trimmed tail %6d-%6d against   kept head %6d-%6d\n",
-              aBgn, aEnd, bBgn, bEnd);
+      fprintf(stderr, "  Test   tail %6d-%6d against   head %6d-%6d\n",
+              keepEnd, length, headBgn, headEnd + 222);
 
-    EdlibAlignResult  result;
-    result = edlibAlign(bases + aBgn, aLen,   //  Piece of the end we trim off
-                        bases + bBgn, bLen,   //  Should align into the head we keep
-                        edlibNewAlignConfig(0.5 * aLen, EDLIB_MODE_HW, EDLIB_TASK_PATH));
+    testEnd.align(bases, length, keepEnd, length,
+                  bases, length, headBgn, headEnd + 222);
 
-    if (bBgn + result.startLocations[0] == keepBgn)
+    if (showAlgorithm())
+      fprintf(stderr, "  Tested tail %6d-%6d aligns to head %6d-%6d\n",
+              testEnd.bgnA(), testEnd.endA(), testEnd.bgnB(), testEnd.endB());
+
+    if (testEnd.bgnB() == keepBgn)
       tailTest = true;
-
-    if (showAlgorithm())
-      fprintf(stderr, "  Tested trimmed head %6d-%6d aligns to kept tail %6d-%6d%s\n",
-              aBgn, aEnd, bBgn + result.startLocations[0], bBgn + result.endLocations[0] + 1, (tailTest) ? "" : " - FAIL");
-
-    edlibFreeAlignResult(result);
   }
 
   if ((headTest == true) &&

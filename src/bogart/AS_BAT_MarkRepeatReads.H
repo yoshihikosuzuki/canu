@@ -43,7 +43,8 @@ markRepeatReads(AssemblyGraph         *AG,
                 TigVector             &tigs,
                 double                 deviationRepeat,
                 uint32                 confusedAbsolute,
-                double                 confusedPercent);
+                double                 confusedPercent,
+                vector<confusedEdge>  &confusedEdges);
 
 
 

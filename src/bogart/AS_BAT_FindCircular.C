@@ -206,8 +206,6 @@ isCircularizingEdge(Unitig   *tig,
     }
   }
 
-  delete [] rc;
-
   return(isCircular);
 }
 
@@ -233,18 +231,17 @@ findCircularContigs(TigVector &tigs,
     //  Grab the first and last reads in the tig, then find the edge that
     //  points out of the tig.
   
-    ufNode          *fRead = tig->firstBackboneRead();
-    ufNode          *lRead = tig->lastBackboneRead();
+    ufNode          *fRead = tig->firstRead();
+    ufNode          *lRead = tig->lastRead();
 
-    bool        invert = (fRead->position.isForward() != lRead->position.isForward());
     uint32      circularLength = 0;
     uint32      ovlLen = 0;
     BAToverlap *ovl    = OC->getOverlaps(lRead->ident, ovlLen);
 
     for (uint32 oo=0; oo<ovlLen; oo++) {
       if ((ovl[oo].b_iid == fRead->ident) &&
-          (((lRead->position.isForward() ==  true) && (ovl[oo].AEndIs3prime() ==  true) && (ovl[oo].flipped == invert))  ||
-           ((lRead->position.isForward() == false) && (ovl[oo].AEndIs5prime() ==  true) && (ovl[oo].flipped == invert))))
+          (((lRead->position.isForward() ==  true) && (ovl[oo].AEndIs3prime() ==  true)) ||
+           ((lRead->position.isForward() == false) && (ovl[oo].AEndIs5prime() ==  true))))
 
         //  Circular!
         circularLength = RI->overlapLength(lRead->ident, fRead->ident, ovl[oo].a_hang, ovl[oo].b_hang);

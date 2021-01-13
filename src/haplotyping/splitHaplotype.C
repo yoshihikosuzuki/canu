@@ -38,12 +38,11 @@ using namespace std;
 
 class hapData {
 public:
-  hapData(char *merylname, char *histoname, char *fastaname, int minKmerMult);
+  hapData(char *merylname, char *histoname, char *fastaname, uint32 minfreq);
   ~hapData();
 
 public:
   void   initializeKmerTable(uint32 maxMemory);
-  void   initializeKmerTableChild(uint32 maxMemory);
 
   void   initializeOutput(void) {
     outputWriter = new compressedFileWriter(outputName);
@@ -56,6 +55,7 @@ public:
   char                  outputName[FILENAME_MAX+1];
 
   merylExactLookup     *lookup;
+  uint32                minFreq;
   uint32                minCount;
   uint32                maxCount;
   uint64                nKmers;
@@ -84,7 +84,6 @@ public:
     _minRatio         = 1.0;
     _minOutputLength  = 1000;
 
-    _minKmerFreq      = 20;
     _minNmatchDiff    = 5;
 
     _ambiguousName   = NULL;
@@ -105,8 +104,7 @@ public:
     if (_seqStore)
       delete _seqStore;
 
-    if (_seqMeryl)
-      delete _seqMeryl;
+    delete _child;
 
     for (uint32 ii=0; ii<_haps.size(); ii++)
       delete _haps[ii];
@@ -132,13 +130,12 @@ public:
   queue<dnaSeqFile *>    _seqs;      //  Input from FASTA/FASTQ files.
   uint32                 _seqCounts; // read counts for current file
 
+  hapData               *_child;
   vector<hapData *>      _haps;
-  hapData               *_seqMeryl; // for child dataset
 
   double                 _minRatio;
   uint32                 _minOutputLength;
 
-  uint32                 _minKmerFreq;
   uint32                 _minNmatchDiff;
 
   char                  *_ambiguousName;
@@ -264,16 +261,16 @@ public:
 
 
 
-hapData::hapData(char *merylname, char *histoname, char *fastaname, int minKmerMult) {
-  if (merylname != NULL)
-    strncpy(merylName,  merylname, FILENAME_MAX);
+hapData::hapData(char *merylname, char *histoname, char *fastaname, uint32 minfreq) {
+  strncpy(merylName,  merylname, FILENAME_MAX);
   if (histoname != NULL)
     strncpy(histoName,  histoname, FILENAME_MAX);
   if (fastaname != NULL)
     strncpy(outputName, fastaname, FILENAME_MAX);
 
   lookup       = NULL;
-  minCount     = minKmerMult;
+  minFreq      = minfreq;
+  minCount     = 0;
   maxCount     = UINT32_MAX;
   nKmers       = 0;
 
@@ -399,10 +396,9 @@ getMinFreqFromHistogram(char *histoName) {
 
   delete [] histo;
 
-  fprintf(stdout, "Determined the minimum count threashold: %u\n",minFreq);
-
   return(minFreq);
 }
+
 
 
 
@@ -416,7 +412,7 @@ hapData::initializeKmerTable(uint32 maxMemory) {
   //uint32 minFreq = getMinFreqFromHistogram(histoName);
 
   fprintf(stderr, "--  Haplotype '%s':\n", merylName);
-  fprintf(stderr, "--   use kmers with frequency at least %u.\n", minCount);
+  fprintf(stderr, "--   use kmers with frequency at least %u.\n", minFreq);
 
   //  Construct an exact lookup table.
   //
@@ -428,35 +424,13 @@ hapData::initializeKmerTable(uint32 maxMemory) {
   if (merylName[0]) {
     merylFileReader  *reader = new merylFileReader(merylName);
 
-    lookup = new merylExactLookup();
-    lookup->load(reader, maxMemory, true, false, minCount, UINT32_MAX);
+    lookup = new merylExactLookup(reader, maxMemory, minFreq, UINT32_MAX);
 
-    nKmers = lookup->nKmers();
+    if (lookup->configure() == false) {
+      exit(1);
+    }
 
-    delete reader;
-  }
-
-  //  And report what we loaded.
-
-  fprintf(stderr, "--   loaded %lu kmers.\n", nKmers);
-};
-
-
-
-void
-hapData::initializeKmerTableChild(uint32 maxMemory) {
-  //  Construct an exact lookup table.
-  //
-  //  If there is not valid merylName, do not load data.  This is only useful
-  //  for testing getMinFreqFromHistogram() above.
-  //
-  //  Get this behavior with option '-H "" histo out.fasta',
-
-  if (merylName[0]) {
-    merylFileReader  *reader = new merylFileReader(merylName);
-
-    lookup = new merylExactLookup();
-    lookup->load(reader, maxMemory, true, false, 1, UINT32_MAX);
+    lookup->load();
 
     nKmers = lookup->nKmers();
 
@@ -517,7 +491,7 @@ allData::loadHaplotypeData(void) {
   fprintf(stderr, "-- Loading haplotype data, using up to %u GB memory for each.\n", memPerHap);
   fprintf(stderr, "--\n");
 
-  _seqMeryl->initializeKmerTableChild(memPerHap);
+  _child->initializeKmerTable(memPerHap);
 
   for (uint32 ii=0; ii<_haps.size(); ii++)
     _haps[ii]->initializeKmerTable(memPerHap);
@@ -633,12 +607,16 @@ processReadBatch(void *G, void *T, void *S) {
 
   //fprintf(stderr, "Proces readBatch s %p with %u/%u reads %p %p %p\n", s, s->_numReads, s->_maxReads, s->_names, s->_bases, s->_files);
 
-  uint32       nHaps       = g->_haps.size();
-  uint32      *matches     = new uint32 [nHaps];
-  uint64      *hap_cnts = new uint64 [nHaps];
+  uint32       nHaps   = g->_haps.size();
+  uint32      *matches = new uint32 [nHaps];
+  uint64      *counts  = new uint64 [nHaps];
 
-  uint32       pos, flag;
-  uint64       read_cnt;
+  uint32 pos;
+  uint64 fmer_cnt, rmer_cnt;
+  uint64 cfmer_cnt, crmer_cnt;
+  char fmer_seq[100], rmer_seq[100];
+
+  fprintf(stderr, "minNmatchDiff=%u\n", g->_minNmatchDiff);
 
   for (uint32 ii=0; ii<s->_numReads; ii++) {
 
@@ -654,24 +632,31 @@ processReadBatch(void *G, void *T, void *S) {
 
     pos = 0;
     while (kiter.nextMer()) {
-      read_cnt = g->_seqMeryl->lookup->value(kiter.fmer());
-      if (read_cnt == 0)
-        read_cnt = g->_seqMeryl->lookup->value(kiter.rmer());
-      if (read_cnt < g->_minKmerFreq)
-        continue;
-      flag = 0;
-      for (uint32 hh=0; hh<nHaps; hh++) {
-          hap_cnts[hh] = g->_haps[hh]->lookup->value(kiter.fmer());
-          if (hap_cnts[hh] < g->_haps[hh]->lookup->value(kiter.rmer()))
-            hap_cnts[hh] = g->_haps[hh]->lookup->value(kiter.rmer());
-          if (hap_cnts[hh] > 0) {
-            matches[hh]++;
-            flag = 1;
-          }
+      kiter.fmer().toString(fmer_seq);
+      kiter.rmer().toString(rmer_seq);
+      cfmer_cnt = g->_child->lookup->value(kiter.fmer());
+      crmer_cnt = g->_child->lookup->value(kiter.rmer());
+      if ( ((cfmer_cnt == 0) && (crmer_cnt == 0))
+           || ((cfmer_cnt > 0) && (crmer_cnt > 0) && (strcmp(fmer_seq, rmer_seq) != 0)) ) {
+        fprintf(stdout, "read %8u: (f,r)=(%lu,%lu) (%s, %s)\n",
+                ii+1, cfmer_cnt, crmer_cnt, fmer_seq, rmer_seq);
       }
-      if (0 && flag == 1)
-        fprintf(stdout, "read %u[%u]: %lu (child), %lu (hap1), %lu (hap2)\n",
-                        ii, pos, read_cnt, hap_cnts[0], hap_cnts[1]);
+      if ((cfmer_cnt >= g->_child->minFreq) || (crmer_cnt >= g->_child->minFreq)) {
+        for (uint32 hh=0; hh<nHaps; hh++) {
+          fmer_cnt = g->_haps[hh]->lookup->value(kiter.fmer());
+          rmer_cnt = g->_haps[hh]->lookup->value(kiter.rmer());
+          if ((fmer_cnt > 0) && (rmer_cnt > 0) && (strcmp(fmer_seq, rmer_seq) != 0)) {
+            fprintf(stdout, "hap%1u: (f,r)=(%lu,%lu) (%s, %s)\n",
+                    hh, fmer_cnt, rmer_cnt, fmer_seq, rmer_seq);
+          }
+          counts[hh] = (fmer_cnt >= rmer_cnt) ? fmer_cnt : rmer_cnt;
+          if (counts[hh] >= g->_haps[hh]->minFreq) {
+            matches[hh]++;
+          }
+        }
+        fprintf(stdout, "Read %8u @%8u (%5lu, %5lu): %5lu vs %5lu (%5u vs %5u)\n",
+                ii+1, pos, cfmer_cnt, crmer_cnt, counts[0], counts[1], matches[0], matches[1]);
+      }
       pos++;
     }
 
@@ -697,18 +682,6 @@ processReadBatch(void *G, void *T, void *S) {
       assert(sco2nd <= sco1st);
     }
 
-    if (0) {
-      if (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-          ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio)))
-        fprintf(stdout, "hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> %1u\n",
-                hap1st, sco1st, matches[hap1st],
-                hap2nd, sco2nd, matches[hap2nd], hap1st);
-      else
-        fprintf(stdout, "hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> AMBIGUOUS\n",
-                hap1st, sco1st, matches[hap1st],
-                hap2nd, sco2nd, matches[hap2nd]);
-    }
-
     //  Write the read to the 'best' haplotype, unless it's an ambiguous assignment.
     //
     //  By default, write to the ambiguous file.
@@ -717,12 +690,20 @@ processReadBatch(void *G, void *T, void *S) {
     //   - there is a non-zero best score and the second best is zero
     //   - the ratio of best to second best is bigger than some threshold
 
-    s->_files[ii] = UINT32_MAX;
+    fprintf(stdout, "Read %d (%d bp): hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> ",
+            ii+1, s->_bases[ii].length(),
+            hap1st, sco1st, matches[hap1st],
+            hap2nd, sco2nd, matches[hap2nd]);
 
-    if ( (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
-          ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio)))
-				 && (matches[hap1st] - matches[hap2nd] >= g->_minNmatchDiff) )
+    s->_files[ii] = UINT32_MAX;
+    if ( (matches[hap1st] >= matches[hap2nd] + g->_minNmatchDiff)
+         && (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
+             ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio))) ) {
       s->_files[ii] = hap1st;
+      fprintf(stdout, "%1u\n", hap1st);
+    } else {
+      fprintf(stdout, "AMBIGUOUS\n");
+    }
   }
 
   delete [] matches;
@@ -784,24 +765,22 @@ main(int argc, char **argv) {
       while ((arg < argc) && (fileExists(argv[arg+1])))
         G->_seqs.push(new dnaSeqFile(argv[++arg]));
 
-    } else if (strcmp(argv[arg], "-M") == 0) {   //  CHILD DATA SPECIFICATION
-      G->_seqMeryl = new hapData(argv[++arg], NULL, NULL, 1);
+    } else if (strcmp(argv[arg], "-M") == 0) {   //  CHILD SPECIFICATION
+      G->_child = new hapData(argv[arg+1], NULL, NULL, strtouint32(argv[arg+2]));
+      arg += 2;
 
     } else if (strcmp(argv[arg], "-H") == 0) {   //  HAPLOTYPE SPECIFICATION
-      G->_haps.push_back(new hapData(argv[arg+1], argv[arg+2], argv[arg+3], strtodouble(argv[arg+4])));
+      G->_haps.push_back(new hapData(argv[arg+1], argv[arg+2], argv[arg+3], strtouint32(argv[arg+4])));
       arg += 4;
 
     } else if (strcmp(argv[arg], "-A") == 0) {
       G->_ambiguousName = argv[++arg];
 
-    } else if (strcmp(argv[arg], "-cr") == 0) {
+    } else if (strcmp(argv[arg], "-cr") == 0) {  //  PARAMETERS
       G->_minRatio = strtodouble(argv[++arg]);
 
     } else if (strcmp(argv[arg], "-cl") == 0) {
       G->_minOutputLength = strtouint32(argv[++arg]);
-
-    } else if (strcmp(argv[arg], "-hf") == 0) {
-      G->_minKmerFreq = strtouint32(argv[++arg]);
 
     } else if (strcmp(argv[arg], "-hd") == 0) {
       G->_minNmatchDiff = strtouint32(argv[++arg]);
@@ -829,8 +808,8 @@ main(int argc, char **argv) {
     err.push_back("No input sequences supplied with either (-S) or (-R).\n");
   if ((G->_seqName != NULL) && (G->_seqs.size() != 0))
     err.push_back("Only one type of input reads (-S or -R) supported.\n");
-  if (G->_seqMeryl == NULL)
-    err.push_back("No meryl data for input reads.\n");
+  if (G->_child == NULL)
+    err.push_back("No meryl data for child reads (-M).\n");
   if (G->_haps.size() < 2)
     err.push_back("Not enough haplotypes (-H) supplied.\n");
 
@@ -853,7 +832,7 @@ main(int argc, char **argv) {
     fprintf(stderr, "    parent-kmers.histogram  - a histogram of all parent kmers.\n");
     fprintf(stderr, "    haplo-output.fasta.gz   - output reads assigned to this haplotype.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -H haplo-kmers.meryl parent-kmers.histogram haplo-output.fasta.gz minKmerMultiplicity\n");
+    fprintf(stderr, "  -H haplo-kmers.meryl parent-kmers.histogram haplo-output.fasta.gz min-kmer-freq\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  The 'parent-kmers.histgram' is used to determine a noise threshold.  kmers\n");
     fprintf(stderr, "  that occur fewer than that many times are ignored as being likely noise kmers.\n");
@@ -863,7 +842,7 @@ main(int argc, char **argv) {
     fprintf(stderr, "CHILD MERYL INPUT\n");
     fprintf(stderr, "  Used for ignoring low-frequency k-mers for k-mer matching between child and parents.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -M child-kmers.meryl\n");
+    fprintf(stderr, "  -M child-kmers.meryl min-kmer-freq\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "OUTPUTS:\n");
     fprintf(stderr, "  Haplotype-specific reads are written to 'haplo.fasta.gz' as specified in each -H\n");
@@ -878,8 +857,7 @@ main(int argc, char **argv) {
     fprintf(stderr, "  -cr ratio        minimum ratio between best and second best to classify\n");
     fprintf(stderr, "  -cl length       minimum length of output read\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -hf number       minimum frequency (in the child dataset) of a k-mer used for k-mer matching\n");
-    fprintf(stderr, "  -hd number       minimum difference of the number of matched k-mers between two haplotypes for each read\n");
+    fprintf(stderr, "  -hd number       minimum difference of the number of matched k-mers between haplotypes\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v               report how many batches per second are being processed\n");
     fprintf(stderr, "\n");

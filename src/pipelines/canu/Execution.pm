@@ -336,10 +336,6 @@ sub getJobIDShellCode () {
     $string .= "  exit\n";
     $string .= "fi\n";
     $string .= "jobid=`expr -- \$baseid + \$offset`\n";
-    $string .= "if [ x\$baseid = x0 ]; then\n";
-    $string .= "  echo Error: jobid 0 is invalid\\; I need $taskenv set, or a job index on the command line.\n";
-    $string .= "  exit\n";
-    $string .= "fi\n";
     $string .= "if [ x\$$taskenv = x ]; then\n";
     $string .= "  echo Running job \$jobid based on command line options.\n";
     $string .= "else\n";
@@ -1222,20 +1218,6 @@ sub submitOrRunParallelJob ($$$$@) {
 
         purgeGridJobSubmitScripts($path, $script);
 
-        if (getGlobal("showNext")) {
-            print STDERR "--\n";
-            print STDERR "-- NEXT COMMANDS\n";
-            print STDERR "--\n";
-            print STDERR "\n";
-            print STDERR prettifyCommand("cd $path"), "\n";
-            foreach my $j (@jobs) {
-                my ($cmd, $jobName) = buildGridJob($asm, $jobType, $path, $script, $mem, $thr, $dsk, $j, undef);
-
-                print STDERR prettifyCommand("./$cmd.sh") . "\n";
-            }
-            exit(0);
-        }
-
         foreach my $j (@jobs) {
             my ($cmd, $jobName) = buildGridJob($asm, $jobType, $path, $script, $mem, $thr, $dsk, $j, undef);
 
@@ -1283,15 +1265,8 @@ sub submitOrRunParallelJob ($$$$@) {
                 }
 
                 if (uc(getGlobal("gridEngine")) eq "SLURM") {
-                    #  BPW has seen Slurm report "ERROR" instead of something
-                    #  useful here.  If that is seen, report the error to the
-                    #  screen and ignore this job.  We'll redo it on the next
-                    #  iteration (unless this is the second iteration, then
-                    #  we're screwed either way).
                     if (m/Submitted\sbatch\sjob\s(\d+)/) {
                         $jobName = $1;
-                    } elsif (m/ERROR/) {
-                        $jobName = undef;
                     } else {
                         $jobName = $_;
                     }
@@ -1303,17 +1278,13 @@ sub submitOrRunParallelJob ($$$$@) {
             }
             close(F);
 
-            if      (!defined($jobName)) {
-                print STDERR "-- '$cmd.sh' -> returned an error; job not submitted.\n";
-            } elsif ($j =~ m/^\d+$/) {
+            if ($j =~ m/^\d+$/) {
                 print STDERR "-- '$cmd.sh' -> job $jobName task $j.\n";
             } else {
                 print STDERR "-- '$cmd.sh' -> job $jobName tasks $j.\n";
             }
 
-            if (defined($jobName)) {
-                push @jobsSubmitted, $jobName;
-            }
+            push @jobsSubmitted, $jobName;
         }
 
         print STDERR "--\n";
@@ -1399,18 +1370,6 @@ sub submitOrRunParallelJob ($$$$@) {
             $ed = $2;
         } else {
             $st = $ed = $j;
-        }
-
-        if (getGlobal("showNext")) {
-            print STDERR "--\n";
-            print STDERR "-- NEXT COMMANDS\n";
-            print STDERR "--\n";
-            print STDERR "\n";
-            print STDERR prettifyCommand("cd $path") . "\n";
-            for (my $i=$st; $i<=$ed; $i++) {
-                print STDERR prettifyCommand("./$script.sh $i") . "\n";
-            }
-            exit(0);
         }
 
         for (my $i=$st; $i<=$ed; $i++) {
@@ -1510,11 +1469,7 @@ sub runCommand ($$) {
     #  If only showing the next command, show it and stop.
 
     if (getGlobal("showNext")) {
-        print STDERR "--\n";
-        print STDERR "-- NEXT COMMAND\n";
-        print STDERR "--\n";
-        print STDERR "\n";
-        print STDERR prettifyCommand("cd $dir") . "\n";
+        print STDERR "--NEXT-COMMAND\n";
         print STDERR "$dis\n";
         exit(0);
     }

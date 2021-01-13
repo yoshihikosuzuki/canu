@@ -106,7 +106,7 @@ toString(sqStore_mode m) {
 
 static
 void
-makeBlobName(char const *storePath, uint32 blobNumber, char *blobName) {
+makeBlobName(char *storePath, uint32 blobNumber, char *blobName) {
   snprintf(blobName, FILENAME_MAX, "%s/blobs.%04" F_U32P , storePath, blobNumber);
 }
 
@@ -117,25 +117,17 @@ public:
   ~sqStoreInfo();
 
 private:
-  bool      readInfo8(char const *metaPath);
+  bool      readInfo8(char *storePath);
 public:
-  void      readInfo(char const *metaPath);
-  void      writeInfo(char const *metaPath);
+  void      readInfo(char *storePath);
+  void      writeInfo(char *storePath);
 
   void      writeInfoAsText(FILE *F);
 
   uint32    sqInfo_lastLibraryID(void)          { return(_numLibraries); };
   uint32    sqInfo_lastReadID(void)             { return(_numReads);     };
 
-  //  Well, shoot.  The on-disk metadata is storing _reads as a 64-bit int
-  //  for some reason, although the store cannot handle more than 4-billion
-  //  reads.  I can't change the 64-bit int to a 32-bit int without breaking
-  //  combatibility, and am not sure what havoc would result if I return a
-  //  64-bit int here (probably none, but it's be a glaring inconsistency all
-  //  over the place, instead of just here).
-  //
-  uint32    sqInfo_numReads(sqRead_which w)     { return((uint32)_reads[w]); };
-  uint64    sqInfo_numBases(sqRead_which w)     { return(        _bases[w]); };
+  uint32    sqInfo_numReads(sqRead_which w)     { return(_reads[w]);     };
 
 public:
   bool      examineRead(uint32 ii, sqReadSeq *seq, sqRead_which w);
@@ -224,7 +216,7 @@ private:
 
 class sqStore {
 public:
-  sqStore(char const *storePath, sqStore_mode mode=sqStore_readOnly, uint32 version=0);
+  sqStore(char const *storePath, sqStore_mode mode=sqStore_readOnly);
   ~sqStore();
 private:
   void         sqStore_loadMetadata(void);
@@ -232,11 +224,7 @@ private:
 public:
   const char  *sqStore_path(void) { return(_storePath); };  //  Returns the path to the store
 
-  static
-  uint32       sqStore_lastVersion(char const *storePath);
-
-  static
-  void         sqStore_revertVersion(char const *storePath, uint32 version);
+  void         sqStore_delete(void);             //  Deletes the files in the store.
 
   uint32       sqStore_lastLibraryID(void)            { return(_info.sqInfo_lastLibraryID()); };
   uint32       sqStore_lastReadID(void)               { return(_info.sqInfo_lastReadID());    };
@@ -260,10 +248,6 @@ public:
 
 private:
   sqReadSeq   *sqStore_getSeq(sqRead_which w) {
-
-    if (w == sqRead_unset)         //  If w is somehow set to the unset state,
-      w = sqRead_defaultVersion;   //  go back to using the global default.
-
     bool  isRaw = ((w & sqRead_raw)        == sqRead_raw);
     bool  isCor = ((w & sqRead_corrected)  == sqRead_corrected);
     bool  isTrm = ((w & sqRead_trimmed)    == sqRead_trimmed);
@@ -306,22 +290,16 @@ public:
   bool               sqStore_isTrimmedRead(uint32 id, sqRead_which w=sqRead_defaultVersion);
 
   //  For use ONLY by sqStoreCreate, to add new libraries and reads to a
-  //  store.
-  //
-  //    addEmptyLibrary() adds a new library to the store.
-  //
-  //    createEmptyRead() allocates a sRDW, but does not add a new read to
-  //    the store.  It must be followed by addRead() to load the data to the
-  //    store.  Of note, the sRDW is assigned a read ID for the next -
-  //    currently non-existent - read in the store.  Calling
-  //    createEmptyRead() twice with no addRead() between will create two
-  //    reads with the same ID and Bad Things will result.
+  //  store.  The first two allocate a new metadata object in the store,
+  //  while the last loads read sequence data.
   //
 public:
   sqLibrary         *sqStore_addEmptyLibrary(char const *name, sqLibrary_tech techType);
+  sqReadDataWriter  *sqStore_addEmptyRead(sqLibrary *lib, const char *name);
 
-  sqReadDataWriter  *sqStore_createEmptyRead(sqLibrary *lib, const char *name);
-  void               sqStore_addRead(sqReadDataWriter *rdw);
+  void               sqStore_addRead(sqReadDataWriter *rdw) {
+    _blobWriter->writeData(rdw);
+  };
 
   //  Used when initially loading reads into seqStore, and when loading
   //  trimmed reads.  It sets the ignore flag in both the normal and
@@ -344,10 +322,8 @@ private:
   sqStoreInfo          _info;  //  All the stuff stored on disk.
 
   char                 _storePath[FILENAME_MAX+1];    //  Needed to create files
-  char                 _metaPath[FILENAME_MAX+1];
 
   sqStore_mode         _mode;  //  What mode this store is opened as, sanity checking
-  uint32               _version;
 
   uint32               _librariesAlloc;  //  Size of allocation
   sqLibrary           *_libraries;       //  In core data

@@ -2,7 +2,8 @@ MODULE       :=    canu
 TARGET       := libcanu.a
 SOURCES      := utility/src/utility/runtime.C \
                 \
-                utility/src/utility/align-parasail-driver.C \
+                utility/src/utility/align-ssw.C \
+                utility/src/utility/align-ssw-driver.C \
                 utility/src/utility/edlib.C \
                 \
                 utility/src/utility/files.C \
@@ -31,22 +32,12 @@ SOURCES      := utility/src/utility/runtime.C \
                 utility/src/utility/kmers.C \
                 \
                 utility/src/utility/bits.C \
-                utility/src/utility/bits-wordArray.C \
                 \
                 utility/src/utility/hexDump.C \
                 utility/src/utility/md5.C \
                 utility/src/utility/mt19937ar.C \
                 utility/src/utility/speedCounter.C \
                 utility/src/utility/sweatShop.C \
-                \
-                utility/src/parasail/cpuid.c \
-                utility/src/parasail/memory.c \
-                utility/src/parasail/sg.c \
-                utility/src/parasail/sg_trace.c \
-                utility/src/parasail/sg_qx_dispatch.c \
-                utility/src/parasail/sg_qb_de_dispatch.c \
-                utility/src/parasail/sg_qe_db_dispatch.c \
-                utility/src/parasail/cigar.c \
                 \
                 correction/computeGlobalScore.C \
                 correction/falconConsensus.C \
@@ -123,9 +114,7 @@ endif
 
 
 SRC_INCDIRS  := . \
-                utility/src \
                 utility/src/utility \
-                utility/src/parasail \
                 stores \
                 stores/libsnappy \
                 alignment \

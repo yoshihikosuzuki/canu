@@ -201,20 +201,19 @@ BestOverlapGraph::findErrorRateThreshold(FILE *report) {
 
   sort(erates.begin(), erates.end());
 
-  //  Find mean/stddev (with an online calculation) and the median/mad.
+  //  Find mean and stddev with an online calculation.
 
   stdDev<double>  edgeStats;
 
   for (uint32 ii=0; ii<erates.size(); ii++)
     edgeStats.insert(erates[ii]);
 
-  double mean   = edgeStats.mean();
-  double stddev = edgeStats.stddev();
+  _mean   = edgeStats.mean();
+  _stddev = edgeStats.stddev();
 
-  double median = 0.0;
-  double mad    = 0.0;
+  //  Find the median and absolute deviations.
 
-  computeMedianAbsoluteDeviation(erates, median, mad, true);
+  computeMedianAbsoluteDeviation(erates, _median, _mad, true);
 
   //  Pick an error threshold.
   //
@@ -231,15 +230,15 @@ BestOverlapGraph::findErrorRateThreshold(FILE *report) {
 
   double   Tgraph  = _erateGraph;   //  was Tinput = _errorLimit
   double   Tmax    = _erateMax;
-  double   Tmean   = mean   + _deviationGraph          * stddev;
-  double   Tmad    = median + _deviationGraph * 1.4826 * mad;
+  double   Tmean   = _mean   + _deviationGraph          * _stddev;
+  double   Tmad    = _median + _deviationGraph * 1.4826 * _mad;
   uint32    pos    = (uint32)((erates.size()+1) * _percentileError);
   double   Tperct  = erates[pos] + 1e-5;
 
   assert((_erateGraph == _errorLimit) ||   //  Either erateGraph or erateMax, as
          (_erateMax   == _errorLimit));    //  set in findInitialEdges().
 
-  double   TpickedTight = min(_errorLimit, ((median > 1e-10) ? Tmad : Tperct));
+  double   TpickedTight = min(_errorLimit, ((_median > 1e-10) ? Tmad : Tperct));
   double   TpickedLoose = min(_errorLimit, Tmean);
   double   Tpicked      = 0.0;
 
@@ -273,11 +272,11 @@ BestOverlapGraph::findErrorRateThreshold(FILE *report) {
   fprintf(report, "%-12u"     "                 fraction error      fraction        percent\n", edgeStats.size());
   fprintf(report, "samples                              (1e-5)         error          error\n");
   fprintf(report, "                 --------------------------      --------       --------\n");
-  fprintf(report, "command line (-eg)                           ->  %8.2f      %8.4f%%%s\n",                                              1e5 * Tgraph, 100.0 * Tgraph, (_errorLimit == Tgraph) ? "  (enabled)" : "");
-  fprintf(report, "command line (-eM)                           ->  %8.2f      %8.4f%%%s\n",                                              1e5 * Tmax,   100.0 * Tmax,   (_errorLimit == Tmax)   ? "  (enabled)" : "");
-  fprintf(report, "mean + std.dev   %8.2f +- %3.0f * %8.2f"  "  ->  %8.2f      %8.4f%%%s\n", 1e5 * mean,   _deviationGraph, 1e5 * stddev, 1e5 * Tmean,  100.0 * Tmean,  (_errorLimit == Tmean)  ? "  (enabled)" : "");
-  fprintf(report, "median + mad     %8.2f +- %3.0f * %8.2f"  "  ->  %8.2f      %8.4f%%%s\n", 1e5 * median, _deviationGraph, 1e5 * mad,    1e5 * Tmad,   100.0 * Tmad,   (_errorLimit == Tmad)   ? "  (enabled)" : "");
-  fprintf(report, "90th percentile                              ->  %8.2f      %8.4f%%%s\n",                                              1e5 * Tperct, 100.0 * Tperct, (_errorLimit == Tperct) ? "  (enabled)" : "");
+  fprintf(report, "command line (-eg)                           ->  %8.2f      %8.4f%%%s\n",                                                1e5 * Tgraph, 100.0 * Tgraph, (_errorLimit == Tgraph) ? "  (enabled)" : "");
+  fprintf(report, "command line (-eM)                           ->  %8.2f      %8.4f%%%s\n",                                                1e5 * Tmax,   100.0 * Tmax,   (_errorLimit == Tmax)   ? "  (enabled)" : "");
+  fprintf(report, "mean + std.dev   %8.2f +- %3.0f * %8.2f"  "  ->  %8.2f      %8.4f%%%s\n", 1e5 * _mean,   _deviationGraph, 1e5 * _stddev, 1e5 * Tmean,  100.0 * Tmean,  (_errorLimit == Tmean)  ? "  (enabled)" : "");
+  fprintf(report, "median + mad     %8.2f +- %3.0f * %8.2f"  "  ->  %8.2f      %8.4f%%%s\n", 1e5 * _median, _deviationGraph, 1e5 * _mad,    1e5 * Tmad,   100.0 * Tmad,   (_errorLimit == Tmad)   ? "  (enabled)" : "");
+  fprintf(report, "90th percentile                              ->  %8.2f      %8.4f%%%s\n",                                                1e5 * Tperct, 100.0 * Tperct, (_errorLimit == Tperct) ? "  (enabled)" : "");
   fprintf(report, "\n");
   fprintf(report, "BEST EDGE FILTERING\n");
   fprintf(report, "-------------------\n");
@@ -1601,10 +1600,18 @@ BestOverlapGraph::BestOverlapGraph(double            erateGraph,
            ((2 * sizeof(BestEdgeOverlap) * (RI->numReads() + 1)) >> 20));
 
   _reads               = new BestEdgeRead [RI->numReads() + 1];
-  _errorLimit          = erateGraph;
 
   _best5score          = new uint64 [RI->numReads() + 1];   //  Cleared in findEdges().
   _best3score          = new uint64 [RI->numReads() + 1];
+
+  _mean                = erateGraph;
+  _stddev              = 0.0;
+
+  _median              = erateGraph;
+  _mad                 = 0.0;
+
+  _errorLimit          = erateGraph;
+
 
   //  If there is a BOG supplied, copy the reads from there to here.
   //

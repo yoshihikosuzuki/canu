@@ -165,10 +165,12 @@ public:
 class falconConsensus {
 public:
   falconConsensus(uint32               minOutputCoverage_,
+                  uint32               minOutputLength_,
                   double               minOlapIdentity_,
                   uint32               minOlapLength_,
                   bool                 restrictToOverlap_ = true) {
     minOutputCoverage   = minOutputCoverage_;
+    minOutputLength     = minOutputLength_;
     minOlapIdentity     = minOlapIdentity_;
     minOlapLength       = minOlapLength_;
     restrictToOverlap   = restrictToOverlap_;
@@ -227,6 +229,7 @@ public:
 
 private:
   uint32               minOutputCoverage;
+  uint32               minOutputLength;
 
   double               minOlapIdentity;
   uint32               minOlapLength;

@@ -40,26 +40,26 @@ const uint64 AS_BLOBFILE_MAX_SIZE  = 1024 * 1024 * 1024;
 
 
 
-//  The default version is set either by the user explicitly, or by the store
-//  when it is opened.  It should never be unset.
+//  Default version is set either by the user explicitly,
+//  or by the store when it is opened.  It should never
+//  be unset.
 //
-//  If the store is created (new sqStore(...)) with no default set, it will
-//  examine what reads are present and return the 'latest' available (raw,
-//  corrected, trimmed, in that order).  If the homopolymer compression flag
-//  exists, compressed reads will be returned.
+//  Need to track what the 'latest' is:
+//    raw
+//    raw              | trimmed
+//    raw | compressed             -- equivalent, just homopoly compressed
+//    raw | compressed | trimmed   -- equivalent, just homopoly compressed
 //
-//  If the default version is set before the store is opened, exactly those
-//  reads will be returned.
+//    cor
+//    cor              | trimmed
+//    cor | compressed             -- nonsense?
+//    cor | compressed | trimmed   -- nonsense?
 //
 //  The need for sqRead_normal arises when the store is set to return
 //  homopoly compressed reads by default (if file 'homopolymerCompression'
 //  exists).  sqRead_normal prevents sqStore_loadMetadata from enabling
 //  homopoly compression.  It is otherwise not used (and so gets a quite
 //  bogus value).
-//
-//  The 'exclude' function works ONLY AFTER the store is opened - since there
-//  is no default set we can't remove a flag yet.
-//
 
 typedef uint32  sqRead_which;
 
@@ -82,8 +82,6 @@ toString(sqRead_which w) {
   const sqRead_which  t  = sqRead_trimmed;
   const sqRead_which  ct = sqRead_compressed | sqRead_trimmed;
 
-  w &= ~sqRead_normal;  //  Disable flag so we report the normal uncompressed string.
-
   switch (w) {
     case sqRead_unset:            return("unset");                           break;
 
@@ -97,8 +95,8 @@ toString(sqRead_which w) {
     case sqRead_corrected | t:    return("corrected-trimmed");               break;
     case sqRead_corrected | ct:   return("corrected-compressed-trimmed");    break;
 
-    case sqRead_compressed:       return("compressed");                      break;
-    case sqRead_trimmed:          return("trimmed");                         break;
+    case sqRead_compressed:       return("compressed");
+    case sqRead_trimmed:          return("trimmed");
 
     default:                      return("undefined-mode");                  break;
   }
@@ -110,30 +108,6 @@ static
 void
 sqRead_setDefaultVersion(sqRead_which v) {
   sqRead_defaultVersion = v;
-}
-
-static
-void
-sqRead_setDefaultVersionInclude(sqRead_which v) {
-  sqRead_defaultVersion |= v;
-}
-
-static
-void
-sqRead_setDefaultVersionExclude(sqRead_which v) {
-  sqRead_defaultVersion &= ~v;
-}
-
-static    //  Return true of the default version has mode 'v' set.
-bool
-sqRead_defaultIs(sqRead_which v) {
-  return((sqRead_defaultVersion & v) == v);
-}
-
-static    //  Return true of the default version has mode 'v' not set.
-bool
-sqRead_defaultIsNot(sqRead_which v) {
-  return((sqRead_defaultVersion & v) == sqRead_unset);
 }
 
 static
@@ -336,6 +310,41 @@ private:
 //
 class sqRead {
 public:
+  sqRead() {
+    _meta          = NULL;
+    _rawU          = NULL;
+    _rawC          = NULL;
+    _corU          = NULL;
+    _corC          = NULL;
+
+    _metaA         = NULL;
+    _rseqA         = NULL;
+
+    _library       = NULL;
+
+    _blobLoaded    = false;
+
+    _blobName[0]   = 0;
+    _blobName[1]   = 0;
+    _blobName[2]   = 0;
+    _blobName[3]   = 0;
+    _blobLen       = 0;
+    _blobMax       = 0;
+    _blob          = NULL;
+
+    _nameAlloc     = 0;
+    _name          = NULL;
+
+    _rawBasesAlloc = 0;
+    _rawBases      = NULL;
+
+    _corBasesAlloc = 0;
+    _corBases      = NULL;
+
+    _retFlags      = 0;
+    _retBasesAlloc = 0;
+    _retBases      = NULL;
+  }
   ~sqRead() {
     delete [] _metaA;
     delete [] _rseqA;
@@ -398,9 +407,7 @@ public:
     bool  trim = ((w & sqRead_trimmed)    == sqRead_unset) ? false : true;
 
     //  Figure out which bases to return, either raw or corrected, and the
-    //  length of that sequence.  'bases' must be a valid pointer (we're
-    //  either loading raw or corrected bases, but the string can be length
-    //  zero.  In all cases, though, it must be NUL terminated.
+    //  length -- INCLUDING the terminating NUL byte -- of that sequence.
 
     sqReadSeq   *seq      = sqRead_getSeq(w);
     char        *bases    = NULL;
@@ -416,8 +423,8 @@ public:
       basesLen = _corU->sqReadSeq_length();
     }
 
-    assert(bases           != NULL);
-    assert(bases[basesLen] == 0);
+    assert(bases    != NULL);      // How to check we have the blob data loaded?
+    assert(basesLen > 0);
 
     //  If neither compressed or trimmed, just return the sequence we already have.
     //
@@ -470,10 +477,6 @@ private:
 
 private:
   sqReadSeq  *sqRead_getSeq(sqRead_which w) {
-
-    if (w == sqRead_unset)         //  If w is somehow set to the unset state,
-      w = sqRead_defaultVersion;   //  go back to using the global default.
-
     bool  isRaw = ((w & sqRead_raw)        == sqRead_raw);         //  Return the sqReadSeq object
     bool  isCor = ((w & sqRead_corrected)  == sqRead_corrected);   //  appropriate for the supplied
     bool  isTrm = ((w & sqRead_trimmed)    == sqRead_trimmed);     //  sqRead_which.
@@ -492,36 +495,36 @@ private:
   };
 
 private:
-  sqReadMeta   *_meta = nullptr;                 //  Pointers to arrays owned by sqStore.
-  sqReadSeq    *_rawU = nullptr;
-  sqReadSeq    *_rawC = nullptr;
-  sqReadSeq    *_corU = nullptr;
-  sqReadSeq    *_corC = nullptr;
+  sqReadMeta   *_meta;      //  Pointers to arrays owned by sqStore.
+  sqReadSeq    *_rawU;
+  sqReadSeq    *_rawC;
+  sqReadSeq    *_corU;
+  sqReadSeq    *_corC;
 
-  sqReadMeta   *_metaA = nullptr;                //  When loading without a store, these
-  sqReadSeq    *_rseqA = nullptr;                //  hold the data for the above pointers.
+  sqReadMeta   *_metaA;  //  When loading without a store, these hold the
+  sqReadSeq    *_rseqA;  //  data for the above pointers.
 
-  sqLibrary    *_library = nullptr;
+  sqLibrary    *_library;  //  Pointer to the library             sqStore_loadReadData().
 
-  bool          _blobLoaded = false;
+  bool          _blobLoaded;
 
-  char          _blobName[4] = {0};
-  uint32        _blobLen     =  0;
-  uint32        _blobMax     =  0;
-  uint8        *_blob        =  nullptr;
+  char          _blobName[4];
+  uint32        _blobLen;
+  uint32        _blobMax;
+  uint8        *_blob;
 
-  uint32        _nameAlloc = 0;
-  char         *_name      = nullptr;
+  uint32        _nameAlloc;
+  char         *_name;
 
-  uint32        _rawBasesAlloc = 0;              //  The raw sequence, as loaded from disk.
-  char         *_rawBases      = nullptr;
+  uint32        _rawBasesAlloc;    //  The raw sequence, as loaded from disk.
+  char         *_rawBases;
 
-  uint32        _corBasesAlloc = 0;              //  The corrected sequence, as loaded from disk.
-  char         *_corBases      = nullptr;
+  uint32        _corBasesAlloc;    //  The corrected sequence, as loaded from disk.
+  char         *_corBases;
 
-  sqRead_which  _retFlags      = sqRead_unset;   //  Remember what the returned sequence is.
-  uint32        _retBasesAlloc = 0;              //  Scratch space for computing trimmed and
-  char         *_retBases      = nullptr;        //  compressed sequences to return to the user.
+  sqRead_which  _retFlags;         //  Remember what the returned sequence is.
+  uint32        _retBasesAlloc;    //  Scratch space for computing trimmed and compressed
+  char         *_retBases;         //  sequences to return to the user.
 
   friend class sqStore;
   friend class sqCache;
@@ -543,6 +546,18 @@ public:
     _rawC          = rawc;
     _corU          = coru;
     _corC          = corc;
+
+    _nameAlloc     = 0;
+    _nameLen       = 0;
+    _name          = NULL;
+
+    _rawBasesAlloc = 0;
+    _rawBasesLen   = 0;
+    _rawBases      = NULL;
+
+    _corBasesAlloc = 0;
+    _corBasesLen   = 0;
+    _corBases      = NULL;
   };
 
   ~sqReadDataWriter() {
@@ -554,38 +569,51 @@ public:
 public:
   void        sqReadDataWriter_importData(sqRead *read);
 
-  void        sqReadDataWriter_setName(const char *N);
-  void        sqReadDataWriter_setRawBases(const char *S, uint32 Slen);
-  void        sqReadDataWriter_setCorrectedBases(const char *S, uint32 Slen);
+  void        sqReadDataWriter_setName(const char *N) {
+    duplicateArray(_name, _nameLen, _nameAlloc, N, (uint32)strlen(N) + 1);
+  };
+
+  //  _setBases() doesn't need NUL terminated strings on input, but always
+  //  makes NUL terminated strings for itself.
+
+  void        sqReadDataWriter_setRawBases(const char *S, uint32 Slen) {
+    setArraySize(_rawBases, _rawBasesLen, _rawBasesAlloc, Slen+1, resizeArray_doNothing);
+
+    memcpy(_rawBases, S, sizeof(char) * Slen);
+    _rawBases[Slen] = 0;
+
+    _rawBasesLen = Slen + 1;   //  Length INCLUDING NUL, remember?
+  };
+
+  void        sqReadDataWriter_setCorrectedBases(const char *S, uint32 Slen) {
+    setArraySize(_corBases, _corBasesLen, _corBasesAlloc, Slen+1, resizeArray_doNothing);
+
+    memcpy(_corBases, S, sizeof(char) * Slen);
+    _corBases[Slen] = 0;
+
+    _corBasesLen = Slen + 1;
+  };
 
   void        sqReadDataWriter_writeBlob(writeBuffer *buffer);
 
-  uint32      sqReadDataWriter_getRawLength(bool compressed) {
-    return((compressed == false) ? _rawU->sqReadSeq_length() : _rawC->sqReadSeq_length());
-  };
-
-  uint32      sqReadDataWriter_getCorrectedLength(bool compressed) {
-    return((compressed == false) ? _corU->sqReadSeq_length() : _corC->sqReadSeq_length());
-  };
-
 private:
-  sqReadMeta  *_meta = nullptr;           //  Pointer to the read metadata.
-  sqReadSeq   *_rawU = nullptr;           //    In sqStoreCreate, these pointers are
-  sqReadSeq   *_rawC = nullptr;           //    back to the data in sqStore itself.
-  sqReadSeq   *_corU = nullptr;
-  sqReadSeq   *_corC = nullptr;
+  sqReadMeta  *_meta;             //  Pointer to the read metadata.
+  sqReadSeq   *_rawU;
+  sqReadSeq   *_rawC;
+  sqReadSeq   *_corU;
+  sqReadSeq   *_corC;
 
-  uint32       _nameAlloc     = 0;
-  uint32       _nameLen       = 0;
-  char        *_name          = nullptr;
+  uint32       _nameAlloc;
+  uint32       _nameLen;
+  char        *_name;
 
-  uint32       _rawBasesAlloc = 0;        //  The raw sequence.  The length is the
-  uint32       _rawBasesLen   = 0;        //  length of the array, not of the string.
-  char        *_rawBases      = nullptr;
+  uint32       _rawBasesAlloc;    //  The raw sequence.
+  uint32       _rawBasesLen;      //  Length of string, INCLUDING terminating NUL byte.
+  char        *_rawBases;
 
-  uint32       _corBasesAlloc = 0;        //  The corrected sequence.  The length is the
-  uint32       _corBasesLen   = 0;        //  length of the array, not of the string.
-  char        *_corBases      = nullptr;
+  uint32       _corBasesAlloc;    //  The corrected sequence.
+  uint32       _corBasesLen;      //  Length of string, INCLUDING terminating NUL byte.
+  char        *_corBases;
 
   friend class sqStore;
   friend class sqStoreBlobWriter;

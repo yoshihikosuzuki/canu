@@ -88,7 +88,7 @@ sub mhapConfigure ($$$) {
     my ($numHashes, $minNumMatches, $threshold, $ordSketch, $ordSketchMer);
 
     if (!defined(getGlobal("${tag}MhapSensitivity"))) {
-        my $cov = getExpectedCoverage($asm, $tag);
+        my $cov = getExpectedCoverage($tag, $asm);
 
         setGlobal("${tag}MhapSensitivity", "low");                          #  Yup, super inefficient.  The code is
         setGlobal("${tag}MhapSensitivity", "normal")   if ($cov <  60);     #  compact and clear and runs once.
@@ -480,7 +480,6 @@ sub mhapConfigure ($$$) {
     print F "  \$bin/mhapConvert \\\n";
     print F "    -S ../../$asm.seqStore \\\n";
     print F "    -o ./results/\$qry.mhap.ovb.WORKING \\\n";
-    print F "    -minlength ", getGlobal("minOverlapLength"), " \\\n";
     print F "    \$outPath/\$qry.mhap \\\n";
     print F "  && \\\n";
     print F "  mv ./results/\$qry.mhap.ovb.WORKING ./results/\$qry.mhap.ovb\n";

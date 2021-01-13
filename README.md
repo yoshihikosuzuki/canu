@@ -1,32 +1,4 @@
-# Canu + modified haplotype separation for better trio binning
-
-## Modifications and rationale
-
-This branch (`haplotype-separation`; default branch of this fork) contains two modifications in the `splitHapplotype` program, which performs haplotype separation of child reads using parent datasets, as follows:
-
-1. Ignore k-mers that appear in the child dataset with a frequency smaller than some threshold (`-hf` option; 20 by default). This removes potential false positive k-mer matches between child and parent datasets due to sequencing errors (Recall the spike around x=1 in the GenomeScope plot; we discard that part). This value should be determined by looking at the k-mer frequency histogram of the child dataset (using meryl or similar tools).
-2. For each child read, Canu by default assigns one of the haplotypes (=parents) that has a larger number of k-mers shared with the child read if the number of k-mers in each of the parent datasets is same. Our modification requires the difference in the number of shared k-mers between the two haplotypes to be greater than some threshold (`-hd` option; 3 by default). A larger threshold makes the decision of haplotype separation more conservative (for example, a read having only 2 mother-mers and 1 father-mer will be classified as ambiguous with the default threshold whereas original Canu regards it as a mother-specific read).
-
-Currently these modifications are not incorporated into the whole pipeline of Canu but into only `splitHaplotype`, and one needs to use a script `run_canu_haplotype.sh` (put in the root directory of this branch) to run it.
-
-## how to install/use
-
-1. Download and compile:
-
-```bash
-git clone https://github.com/yoshihikosuzuki/canu
-cd canu/src
-make -j<number of threads>
-```
-
-This will generate a directory named `build/` in the root directory of this repository.
-
-2. Modify the script `run_canu_haplotype.sh` (put in the root directory) according to your input files and environments and run it.
-
-
----
-
-# Canu 
+# Canu
 
 Canu is a fork of the [Celera Assembler](http://wgs-assembler.sourceforge.net/wiki/index.php?title=Main_Page), designed for high-noise single-molecule sequencing (such as the [PacBio](http://www.pacb.com) [RS II](http://www.pacb.com/products-and-services/pacbio-systems/rsii/)/[Sequel](http://www.pacb.com/products-and-services/pacbio-systems/sequel/) or [Oxford Nanopore](https://www.nanoporetech.com/) [MinION](https://nanoporetech.com/products)).
 
@@ -38,8 +10,6 @@ Canu is a hierarchical assembly pipeline which runs in four steps:
 * Assemble trimmed corrected sequences
 
 ## Install:
-
-* Do NOT download the .zip source code.  It is missing files and will not compile.  This is a [known flaw](https://github.com/dear-github/dear-github/issues/214) with git itself.
 
 * The easiest way to get started is to download a binary [release](http://github.com/marbl/canu/releases).
 

@@ -190,11 +190,11 @@ sqStoreInfo::update(sqReadSeq  *rawU,
 
 
 bool
-sqStoreInfo::readInfo8(char const *metaPath) {
+sqStoreInfo::readInfo8(char *storeName) {
   uint64  magic;
   uint64  version;
 
-  FILE  *I = AS_UTL_openInputFile(metaPath, '/', "info");
+  FILE  *I = AS_UTL_openInputFile(storeName, '/', "info");
 
   loadFromFile(&_sqMagic,            "sqInfo_sqMagic", I);
   loadFromFile(&_sqVersion,          "sqInfo_sqVersion", I);
@@ -232,10 +232,10 @@ sqStoreInfo::readInfo8(char const *metaPath) {
       char    bName[FILENAME_MAX + 1] = {0};
       uint32  bNum = 0;
 
-      makeBlobName(metaPath, bNum, bName);
+      makeBlobName(storeName, bNum, bName);
 
       while (fileExists(bName) == true)
-        makeBlobName(metaPath, ++bNum, bName);
+        makeBlobName(storeName, ++bNum, bName);
 
       _numBlobs  = bNum;
 
@@ -263,7 +263,7 @@ sqStoreInfo::readInfo8(char const *metaPath) {
 
 
 void
-sqStoreInfo::readInfo(char const *storePath) {
+sqStoreInfo::readInfo(char *storePath) {
 
   //  If no file, don't read it.
 
@@ -306,7 +306,7 @@ sqStoreInfo::readInfo(char const *storePath) {
 
 
 void
-sqStoreInfo::writeInfo(char const *storePath) {
+sqStoreInfo::writeInfo(char *storePath) {
   writeBuffer   *B = new writeBuffer(storePath, '/', "info", "w", 16384);
 
   B->writeIFFobject("MAGC", _sqMagic);

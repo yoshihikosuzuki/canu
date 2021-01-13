@@ -52,10 +52,10 @@ findSeqStorePath(char *requested) {
       (filename[3] != 'b') ||
       (filename[4] != 's') ||
       (filename[5] != '.') ||
-      (isDecDigit(filename[6]) == false) ||
-      (isDecDigit(filename[7]) == false) ||
-      (isDecDigit(filename[8]) == false) ||
-      (isDecDigit(filename[9]) == false))
+      (isdigit(filename[6]) == 0) ||
+      (isdigit(filename[7]) == 0) ||
+      (isdigit(filename[8]) == 0) ||
+      (isdigit(filename[9]) == 0))
     return(NULL);
 
   //  Now just paste the two components together in the proper
@@ -86,14 +86,14 @@ findOvlStorePath(char *requested) {
   //  This format is defined in ovFile::createDataName() in ovStoreFile.C
 
   if ((strlen(filename) != 8) ||
-      (isDecDigit(filename[0]) == false) ||
-      (isDecDigit(filename[1]) == false) ||
-      (isDecDigit(filename[2]) == false) ||
-      (isDecDigit(filename[3]) == false) ||
+      (isdigit(filename[0]) == 0) ||
+      (isdigit(filename[1]) == 0) ||
+      (isdigit(filename[2]) == 0) ||
+      (isdigit(filename[3]) == 0) ||
       (filename[4] != '-')        ||
-      (isDecDigit(filename[5]) == false) ||
-      (isDecDigit(filename[6]) == false) ||
-      (isDecDigit(filename[7]) == false))
+      (isdigit(filename[5]) == 0) ||
+      (isdigit(filename[6]) == 0) ||
+      (isdigit(filename[7]) == 0))
     return(NULL);
 
   //  Get ready for some ugly string parsing.  We expect strings similar to:

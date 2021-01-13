@@ -28,7 +28,6 @@ int
 main(int argc, char **argv) {
   char           *outName     = NULL;
   char           *seqName     = NULL;
-  int32           minLength   = 0;
 
   vector<char *>  files;
 
@@ -41,9 +40,6 @@ main(int argc, char **argv) {
 
     } else if (strcmp(argv[arg], "-S") == 0) {
       seqName = argv[++arg];
-
-    } else if (strcmp(argv[arg], "-minlength") == 0) {
-      minLength = strtoint32(argv[++arg]);
 
     } else if (fileExists(argv[arg])) {
       files.push_back(argv[arg]);
@@ -59,7 +55,6 @@ main(int argc, char **argv) {
   if ((err) || (seqName == NULL) || (outName == NULL) || (files.size() == 0)) {
     fprintf(stderr, "usage: %s -S seqStore -o output.ovb input.mhap[.gz]\n", argv[0]);
     fprintf(stderr, "  Converts mhap native output to ovb\n");
-    fprintf(stderr, "    -minlength X    discards overlaps below X bp long.\n");
 
     if (seqName == NULL)
       fprintf(stderr, "ERROR:  no seqStore (-S) supplied\n");
@@ -152,16 +147,9 @@ main(int argc, char **argv) {
                 ov.dat.ovl.bhg5, ov.dat.ovl.bhg3,
                 (ov.dat.ovl.flipped) ? " flipped" : ""), exit(1);
 
-      //  Overlap looks good, write it if its long enough.  Bogart is
-      //  computing overlap length as the max number of bases covered on
-      //  either read.
+      //  Overlap looks good, write it!
 
-      int32  oalen = alen - ov.dat.ovl.ahg5 - ov.dat.ovl.ahg3;
-      int32  oblen = blen - ov.dat.ovl.bhg5 - ov.dat.ovl.bhg3;
-
-      if ((minLength <= oalen) ||
-          (minLength <= oblen))
-        of->writeOverlap(&ov);
+      of->writeOverlap(&ov);
     }
 
     delete in;
