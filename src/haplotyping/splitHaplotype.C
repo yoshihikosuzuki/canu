@@ -84,7 +84,7 @@ public:
     _minRatio         = 1.0;
     _minOutputLength  = 1000;
 
-    _minNmatchDiff    = 5;
+    _minNmatchDiff    = 10;
 
     _ambiguousName   = NULL;
     _ambiguousWriter = NULL;
@@ -616,8 +616,6 @@ processReadBatch(void *G, void *T, void *S) {
   uint64 cfmer_cnt, crmer_cnt;
   char fmer_seq[100], rmer_seq[100];
 
-  fprintf(stderr, "minNmatchDiff=%u\n", g->_minNmatchDiff);
-
   for (uint32 ii=0; ii<s->_numReads; ii++) {
 
     //  Count the number of matching kmers for each haplotype.
@@ -638,24 +636,27 @@ processReadBatch(void *G, void *T, void *S) {
       crmer_cnt = g->_child->lookup->value(kiter.rmer());
       if ( ((cfmer_cnt == 0) && (crmer_cnt == 0))
            || ((cfmer_cnt > 0) && (crmer_cnt > 0) && (strcmp(fmer_seq, rmer_seq) != 0)) ) {
-        fprintf(stdout, "read %8u: (f,r)=(%lu,%lu) (%s, %s)\n",
-                ii+1, cfmer_cnt, crmer_cnt, fmer_seq, rmer_seq);
+        if (0)
+          fprintf(stdout, "read %8u: (f,r)=(%lu,%lu) (%s, %s)\n",
+                  ii+1, cfmer_cnt, crmer_cnt, fmer_seq, rmer_seq);
       }
       if ((cfmer_cnt >= g->_child->minFreq) || (crmer_cnt >= g->_child->minFreq)) {
         for (uint32 hh=0; hh<nHaps; hh++) {
           fmer_cnt = g->_haps[hh]->lookup->value(kiter.fmer());
           rmer_cnt = g->_haps[hh]->lookup->value(kiter.rmer());
           if ((fmer_cnt > 0) && (rmer_cnt > 0) && (strcmp(fmer_seq, rmer_seq) != 0)) {
-            fprintf(stdout, "hap%1u: (f,r)=(%lu,%lu) (%s, %s)\n",
-                    hh, fmer_cnt, rmer_cnt, fmer_seq, rmer_seq);
+            if (0)
+              fprintf(stdout, "hap%1u: (f,r)=(%lu,%lu) (%s, %s)\n",
+                      hh, fmer_cnt, rmer_cnt, fmer_seq, rmer_seq);
           }
           counts[hh] = (fmer_cnt >= rmer_cnt) ? fmer_cnt : rmer_cnt;
           if (counts[hh] >= g->_haps[hh]->minFreq) {
             matches[hh]++;
           }
         }
-        fprintf(stdout, "Read %8u @%8u (%5lu, %5lu): %5lu vs %5lu (%5u vs %5u)\n",
-                ii+1, pos, cfmer_cnt, crmer_cnt, counts[0], counts[1], matches[0], matches[1]);
+        if (0)
+          fprintf(stdout, "Read %8u @%8u (%5lu, %5lu): %5lu vs %5lu (%5u vs %5u)\n",
+                  ii+1, pos, cfmer_cnt, crmer_cnt, counts[0], counts[1], matches[0], matches[1]);
       }
       pos++;
     }
