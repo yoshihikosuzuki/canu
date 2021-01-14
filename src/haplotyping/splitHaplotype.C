@@ -84,7 +84,7 @@ public:
     _minRatio         = 1.0;
     _minOutputLength  = 1000;
 
-    _minNmatchDiff    = 10;
+    _minNmatch    = 10;
 
     _ambiguousName   = NULL;
     _ambiguousWriter = NULL;
@@ -136,7 +136,7 @@ public:
   double                 _minRatio;
   uint32                 _minOutputLength;
 
-  uint32                 _minNmatchDiff;
+  uint32                 _minNmatch;
 
   char                  *_ambiguousName;
   compressedFileWriter  *_ambiguousWriter;
@@ -611,7 +611,7 @@ processReadBatch(void *G, void *T, void *S) {
   uint32      *matches = new uint32 [nHaps];
   uint64      *counts  = new uint64 [nHaps];
 
-  uint32 pos;
+  uint32 pos, flag;
   uint64 fmer_cnt, rmer_cnt;
   uint64 cfmer_cnt, crmer_cnt;
   char fmer_seq[100], rmer_seq[100];
@@ -634,13 +634,8 @@ processReadBatch(void *G, void *T, void *S) {
       kiter.rmer().toString(rmer_seq);
       cfmer_cnt = g->_child->lookup->value(kiter.fmer());
       crmer_cnt = g->_child->lookup->value(kiter.rmer());
-      if ( ((cfmer_cnt == 0) && (crmer_cnt == 0))
-           || ((cfmer_cnt > 0) && (crmer_cnt > 0) && (strcmp(fmer_seq, rmer_seq) != 0)) ) {
-        if (0)
-          fprintf(stdout, "read %8u: (f,r)=(%lu,%lu) (%s, %s)\n",
-                  ii+1, cfmer_cnt, crmer_cnt, fmer_seq, rmer_seq);
-      }
-      if ((cfmer_cnt >= g->_child->minFreq) || (crmer_cnt >= g->_child->minFreq)) {
+      if ((cfmer_cnt > 0) || (crmer_cnt > 0)) {
+        flag = 0;
         for (uint32 hh=0; hh<nHaps; hh++) {
           fmer_cnt = g->_haps[hh]->lookup->value(kiter.fmer());
           rmer_cnt = g->_haps[hh]->lookup->value(kiter.rmer());
@@ -650,11 +645,12 @@ processReadBatch(void *G, void *T, void *S) {
                       hh, fmer_cnt, rmer_cnt, fmer_seq, rmer_seq);
           }
           counts[hh] = (fmer_cnt >= rmer_cnt) ? fmer_cnt : rmer_cnt;
-          if (counts[hh] >= g->_haps[hh]->minFreq) {
+          if (counts[hh] > 0) {
             matches[hh]++;
+            flag = 1;
           }
         }
-        if (0)
+        if (0 && flag == 1)
           fprintf(stdout, "Read %8u @%8u (%5lu, %5lu): %5lu vs %5lu (%5u vs %5u)\n",
                   ii+1, pos, cfmer_cnt, crmer_cnt, counts[0], counts[1], matches[0], matches[1]);
       }
@@ -663,13 +659,13 @@ processReadBatch(void *G, void *T, void *S) {
 
     //  Find the haplotype with the most and second most matching kmers.
 
-    //uint32  hap1st = UINT32_MAX;   //  Index of the best haplotype.
-    //double  sco1st = 0.0;          //  Score of the best haplotype.
+    uint32  hap1st = UINT32_MAX;   //  Index of the best haplotype.
+    double  sco1st = 0.0;          //  Score of the best haplotype.
 
-    //uint32  hap2nd = UINT32_MAX;   //  Index of the second best haplotype.
-    //double  sco2nd = 0.0;          //  Score of the second best haplotype.
+    uint32  hap2nd = UINT32_MAX;   //  Index of the second best haplotype.
+    double  sco2nd = 0.0;          //  Score of the second best haplotype.
 
-    /*for (uint32 hh=0; hh<nHaps; hh++) {
+    for (uint32 hh=0; hh<nHaps; hh++) {
       double  sco = (double)matches[hh] / g->_haps[hh]->nKmers;
 
       if      (sco1st <= sco) {
@@ -681,7 +677,7 @@ processReadBatch(void *G, void *T, void *S) {
       }
 
       assert(sco2nd <= sco1st);
-    }*/
+    }
 
     //  Write the read to the 'best' haplotype, unless it's an ambiguous assignment.
     //
@@ -691,18 +687,33 @@ processReadBatch(void *G, void *T, void *S) {
     //   - there is a non-zero best score and the second best is zero
     //   - the ratio of best to second best is bigger than some threshold
 
+    fprintf(stdout, "Read %d (%d bp): hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> ",
+            ii+1, s->_bases[ii].length(),
+            hap1st, sco1st, matches[hap1st],
+            hap2nd, sco2nd, matches[hap2nd]);
+
+    s->_files[ii] = UINT32_MAX;
+    if ( (matches[hap1st] >= g->_minNmatch)
+         && (((sco2nd < DBL_MIN) && (sco1st > DBL_MIN)) ||
+             ((sco2nd > DBL_MIN) && (sco1st / sco2nd > g->_minRatio))) ) {
+      s->_files[ii] = hap1st;
+      fprintf(stdout, "%1u\n", hap1st);
+    } else {
+      fprintf(stdout, "AMBIGUOUS\n");
+    }
+    /*
     fprintf(stdout, "Read %d (%d bp): %6u matches vs %6u matches -> ",
             ii+1, s->_bases[ii].length(), matches[0], matches[1]);
 
     s->_files[ii] = UINT32_MAX;
     uint32 hap1st = (matches[0] >= matches[1]) ? 0 : 1;
     uint32 hap2nd = 1 - hap1st;
-    if (matches[hap1st] >= matches[hap2nd] + g->_minNmatchDiff) {
+    if (matches[hap1st] >= matches[hap2nd] + g->_minNmatch) {
       s->_files[ii] = hap1st;
       fprintf(stdout, "%1u\n", hap1st);
     } else {
       fprintf(stdout, "AMBIGUOUS\n");
-    }
+    }*/
   }
 
   delete [] matches;
@@ -781,8 +792,8 @@ main(int argc, char **argv) {
     } else if (strcmp(argv[arg], "-cl") == 0) {
       G->_minOutputLength = strtouint32(argv[++arg]);
 
-    } else if (strcmp(argv[arg], "-hd") == 0) {
-      G->_minNmatchDiff = strtouint32(argv[++arg]);
+    } else if (strcmp(argv[arg], "-cn") == 0) {
+      G->_minNmatch = strtouint32(argv[++arg]);
 
     } else if (strcmp(argv[arg], "-threads") == 0) {
       G->_numThreads = strtouint32(argv[++arg]);
@@ -855,8 +866,7 @@ main(int argc, char **argv) {
     fprintf(stderr, "PARAMETERS\n");
     fprintf(stderr, "  -cr ratio        minimum ratio between best and second best to classify\n");
     fprintf(stderr, "  -cl length       minimum length of output read\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  -hd number       minimum difference of the number of matched k-mers between haplotypes\n");
+    fprintf(stderr, "  -cn number       minimum number of matched k-mers\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v               report how many batches per second are being processed\n");
     fprintf(stderr, "\n");
