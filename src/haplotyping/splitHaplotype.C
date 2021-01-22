@@ -687,8 +687,8 @@ processReadBatch(void *G, void *T, void *S) {
     //   - there is a non-zero best score and the second best is zero
     //   - the ratio of best to second best is bigger than some threshold
 
-    fprintf(stdout, "Read %d (%d bp): hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> ",
-            ii+1, s->_bases[ii].length(),
+    fprintf(stdout, "Read %d [%s] (%d bp): hap1st %1u sco1st %9.7f matches %6u   hap2 %1u sco2nd %9.7f matches %6u -> ",
+            ii+1, s->_names[ii].string(), s->_bases[ii].length(),
             hap1st, sco1st, matches[hap1st],
             hap2nd, sco2nd, matches[hap2nd]);
 
@@ -701,10 +701,11 @@ processReadBatch(void *G, void *T, void *S) {
     } else {
       fprintf(stdout, "AMBIGUOUS\n");
     }
-    /*
-    fprintf(stdout, "Read %d (%d bp): %6u matches vs %6u matches -> ",
-            ii+1, s->_bases[ii].length(), matches[0], matches[1]);
 
+    // Use the number of matches rather than scores (= matches / number of total k-mers in each hap)
+
+    /*fprintf(stdout, "Read %d [%s] (%d bp): %6u matches vs %6u matches -> ",
+            ii+1, s->_names[ii].string(), s->_bases[ii].length(), matches[0], matches[1]);
     s->_files[ii] = UINT32_MAX;
     uint32 hap1st = (matches[0] >= matches[1]) ? 0 : 1;
     uint32 hap2nd = 1 - hap1st;
