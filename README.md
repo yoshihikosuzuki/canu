@@ -9,7 +9,7 @@ This fork contains basically two modifications in `splitHapplotype.C`, which per
 2. `-M child-kmers.meryl min-kmer-freq`
   - This is used for ignoring k-mers that appear in the child dataset with a frequency smaller than some threshold, `min-kmer-freq`. K-mer counts of the child dataset, i.e. `child-kmers.meryl`, must be precomputed with Meryl provided in this repository.
   - This removes potential false positive k-mer matches between child and parent datasets due to sequencing errors in child reads (Recall the spike around x=1 in the GenomeScope plot; we discard that part). This value should be determined by looking at the k-mer count histogram of the child dataset.
-4. `-cn number`
+3. `-cn number`
   - It requires each child read to have a difference in the number of k-mers shared with each of the two haplotypes greater than `-cn` in order to be classified. A larger threshold makes the decision of haplotype separation more conservative.
 
 Currently these modifications are not incorporated into the whole pipeline of Canu but into only `splitHaplotype`, and one needs to use a custom script `run_canu_haplotype.sh` (put in the root directory of this branch) to run it.
